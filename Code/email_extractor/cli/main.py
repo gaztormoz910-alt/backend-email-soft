@@ -162,6 +162,9 @@ async def _process_url(
 ) -> int:
     """Скачать URL, извлечь контакты, проверить MX, добавить в словарь."""
     async with sem:
+        if _STOP_REQUESTED or _CANCEL_REQUESTED:
+            return 0
+            
         if url in checkpoint["processed"]:
             return 0
 
@@ -202,13 +205,17 @@ async def _process_url(
 # ---------------------------------------------------------------------------
 
 _IS_RUNNING = False
+_STOP_REQUESTED = False
+_CANCEL_REQUESTED = False
 
 async def main() -> None:
-    global _IS_RUNNING
+    global _IS_RUNNING, _STOP_REQUESTED, _CANCEL_REQUESTED
     if _IS_RUNNING:
         log.warning("⚠ Экстракция уже запущена. Повторный вызов пропущен.")
         return
     _IS_RUNNING = True
+    _STOP_REQUESTED = False
+    _CANCEL_REQUESTED = False
     try:
         await _main_logic()
     except Exception as exc:
@@ -218,6 +225,7 @@ async def main() -> None:
 
 
 async def _main_logic() -> None:
+    global _STOP_REQUESTED, _CANCEL_REQUESTED
     logging.basicConfig(
         level=getattr(logging, LOG_LEVEL, logging.INFO),
         format=LOG_FORMAT,
@@ -260,6 +268,8 @@ async def _main_logic() -> None:
     with sync_tqdm(local_contacts, desc="📂 Фильтрация локальных", unit="шт") as pbar:
         new_local = []
         for c in pbar:
+            if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                break
             if c.email not in contacts and not is_fake_email(c.email):
                 contacts[c.email] = c
                 new_local.append(c.email)
@@ -291,6 +301,8 @@ async def _main_logic() -> None:
 
         pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
         async for url in crawler.discover(http):
+            if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                break
             if url not in checkpoint["processed"]:
                 task = asyncio.create_task(
                     _process_url(http, url, sem, extractor, mx, contacts, checkpoint, pbar)
@@ -343,6 +355,8 @@ async def _main_logic() -> None:
         new_gh = []
 
         for contact in gh_contacts:
+            if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                break
             if contact.email not in contacts:
                 if await mx.check(contact.domain):
                     contacts[contact.email] = contact
@@ -359,8 +373,13 @@ async def _main_logic() -> None:
     # ------------------------------------------------------------------
     # Сохранение результатов
     # ------------------------------------------------------------------
-    _save_checkpoint(checkpoint)
-    repo.save(contacts)
+    if _CANCEL_REQUESTED:
+        msg_cancel = "🛑 СЕССИЯ ОТМЕНЕНА. Результаты отброшены, прогресс не сохранен."
+        log.warning(msg_cancel)
+        asyncio.create_task(ws_manager.send_log(msg_cancel))
+    else:
+        _save_checkpoint(checkpoint)
+        repo.save(contacts)
 
     total_elapsed = (datetime.now() - start_time).total_seconds()
     
