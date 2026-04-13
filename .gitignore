@@ -1,0 +1,66 @@
+# ============================================
+# GITIGNORE для Email Extractor
+# ============================================
+
+# Файлы с секретами и конфиденциальной информацией
+.env
+*.key
+*.pem
+*.token
+
+# Результаты работы скрипта (базы email)
+emails_unique.txt
+contacts.csv
+checkpoint.json
+*.db
+*.sqlite
+
+# Кеш и временные файлы Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Виртуальное окружение
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Файлы IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Логи и отладочные файлы
+*.log
+*.tmp
+*.temp
+
+# Архивы и скачанные файлы (если не хочешь их хранить в репо)
+*.zip
+*.tar.gz
+*.rar
+downloads/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Файлы конфигурации конкретного пользователя
+.coveralls.yml
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Данные, собранные скриптом (если они большие)
+data/
+output/
+# Игнорируем сканируемые локальные файлы
+Additional_files-for-check/*
+!Additional_files-for-check/.gitkeep
