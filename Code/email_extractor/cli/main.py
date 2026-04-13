@@ -96,9 +96,10 @@ from config import (  # noqa: E402
     PIPERMAIL_SERVERS,
     REQUEST_TIMEOUT,
     TXT_OUTPUT,
+    DB_OUTPUT,
 )
 from email_extractor.core.entities import Contact
-from email_extractor.infrastructure.csv_writer import CsvContactRepository
+from email_extractor.infrastructure.sqlite_repository import SqliteContactRepository
 from email_extractor.infrastructure.http_client import AsyncHttpClient
 from email_extractor.services.email_extractor import EmailExtractorService, is_fake_email
 from email_extractor.services.github_scanner import GitHubScanner
@@ -156,7 +157,7 @@ async def _process_url(
     sem: asyncio.Semaphore,
     extractor: EmailExtractorService,
     mx: MxChecker,
-    contacts: dict[str, Contact],
+    repo: SqliteContactRepository,
     checkpoint: dict,
     pbar=None,
 ) -> int:
@@ -183,16 +184,15 @@ async def _process_url(
                 continue
             if not await mx.check(contact.domain):
                 continue
-            if e not in contacts:
-                contacts[e] = contact
+            
+            if repo.add_if_not_exists(contact):
                 added += 1
-                new_emails.append(e)
 
         if added:
             msg = f"   🎯 +{added} адресов: {url[:70]}"
             log.info(msg)
             asyncio.create_task(ws_manager.send_log(msg))
-            asyncio.create_task(ws_manager.send_emails(new_emails))
+            asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
         checkpoint["processed"].append(url)
         if pbar:
@@ -236,6 +236,8 @@ async def _main_logic() -> None:
     _START_TIME = datetime.now().timestamp()
     start_time = datetime.now()
 
+    ws_manager.clear_history()
+
     msg_start = "🚀 ЗАПУСК EMAIL EXTRACTOR v12.0 FINAL — MAXIMUM OVERDRIVE"
     log.info("=" * 60)
     log.info(msg_start)
@@ -247,15 +249,14 @@ async def _main_logic() -> None:
     # ------------------------------------------------------------------
     # Инициализация компонентов
     # ------------------------------------------------------------------
-    repo = CsvContactRepository(csv_path=CSV_OUTPUT, txt_path=TXT_OUTPUT)
+    repo = SqliteContactRepository(db_path=DB_OUTPUT)
     mx = MxChecker()
     extractor = EmailExtractorService()
     sem = asyncio.Semaphore(MAX_CONCURRENT)
 
     # ------------------------------------------------------------------
-    # Загрузка существующих контактов + checkpoint
+    # Загрузка checkpoint
     # ------------------------------------------------------------------
-    contacts: dict[str, Contact] = repo.load()
     checkpoint = _load_checkpoint()
 
     # ------------------------------------------------------------------
@@ -263,24 +264,23 @@ async def _main_logic() -> None:
     # ------------------------------------------------------------------
     log.info("\n📂 ЭТАП 0: Локальное сканирование")
     phase_start = datetime.now()
-    before = len(contacts)
 
     scanner = LocalFileScanner(extensions={"*"})
     local_contacts: list[Contact] = await asyncio.to_thread(scanner.scan, LOCAL_SCAN_DIR)
 
     with sync_tqdm(local_contacts, desc="📂 Фильтрация локальных", unit="шт") as pbar:
-        new_local = []
+        added_local = 0
         for c in pbar:
             if _STOP_REQUESTED or _CANCEL_REQUESTED:
                 break
-            if c.email not in contacts and not is_fake_email(c.email):
-                contacts[c.email] = c
-                new_local.append(c.email)
+            if not is_fake_email(c.email):
+                if repo.add_if_not_exists(c):
+                    added_local += 1
 
-    if new_local:
-        asyncio.create_task(ws_manager.send_emails(new_local))
+    if added_local > 0:
+        asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
-    msg_local = f"✅ Локальные файлы добавили {len(new_local)} адресов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+    msg_local = f"✅ Локальные файлы добавили {added_local} адресов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
     log.info(msg_local)
     asyncio.create_task(ws_manager.send_log(msg_local))
 
@@ -308,7 +308,7 @@ async def _main_logic() -> None:
                 break
             if url not in checkpoint["processed"]:
                 task = asyncio.create_task(
-                    _process_url(http, url, sem, extractor, mx, contacts, checkpoint, pbar)
+                    _process_url(http, url, sem, extractor, mx, repo, checkpoint, pbar)
                 )
                 pipermail_tasks.append(task)
 
@@ -336,7 +336,7 @@ async def _main_logic() -> None:
 
         pbar = async_tqdm(total=len(dork_urls), desc="Обработка Dorks", unit="URL", position=0)
         dork_tasks = [
-            _process_url(http, url, sem, extractor, mx, contacts, checkpoint, pbar)
+            _process_url(http, url, sem, extractor, mx, repo, checkpoint, pbar)
             for url in dork_urls
         ]
         await asyncio.gather(*dork_tasks)
@@ -360,14 +360,12 @@ async def _main_logic() -> None:
         for contact in gh_contacts:
             if _STOP_REQUESTED or _CANCEL_REQUESTED:
                 break
-            if contact.email not in contacts:
-                if await mx.check(contact.domain):
-                    contacts[contact.email] = contact
+            if await mx.check(contact.domain):
+                if repo.add_if_not_exists(contact):
                     added_gh += 1
-                    new_gh.append(contact.email)
                     
-        if new_gh:
-            asyncio.create_task(ws_manager.send_emails(new_gh))
+        if added_gh > 0:
+            asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
         msg_gh = f"✅ GitHub добавил {added_gh} адресов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
         log.info(msg_gh)
@@ -382,14 +380,13 @@ async def _main_logic() -> None:
         asyncio.create_task(ws_manager.send_log(msg_cancel))
     else:
         _save_checkpoint(checkpoint)
-        repo.save(contacts)
 
     total_elapsed = (datetime.now() - start_time).total_seconds()
     
     msg_end = (
         f"={60*'='}\n"
         f"🏁 РАБОТА ЗАВЕРШЕНА за {_format_time(total_elapsed)}\n"
-        f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {len(contacts)}\n"
+        f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {repo.get_count()}\n"
         f"💾 MX-кэш: {mx.cache_size} доменов проверено\n"
         f"={60*'='}"
     )

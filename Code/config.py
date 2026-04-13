@@ -36,6 +36,7 @@ PROJECT_DIR: Path = CODE_DIR.parent
 OUTPUT_DIR: Path = PROJECT_DIR
 TXT_OUTPUT: Path = OUTPUT_DIR / "emails_unique.txt"
 CSV_OUTPUT: Path = OUTPUT_DIR / "contacts.csv"
+DB_OUTPUT: Path = OUTPUT_DIR / "contacts.db"
 CHECKPOINT_FILE: Path = OUTPUT_DIR / "checkpoint.json"
 
 # Директория для локального сканирования

@@ -3,12 +3,13 @@ import logging
 
 from typing import Optional, List
 from fastapi import BackgroundTasks, FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import LOCAL_SCAN_DIR
+from config import LOCAL_SCAN_DIR, DB_OUTPUT
 
 from websocket_manager import ws_manager
+from email_extractor.infrastructure.sqlite_repository import SqliteContactRepository
 
 # Подключаем функцию main из CLI и флаги
 import email_extractor.cli.main as core_main
@@ -116,6 +117,25 @@ async def delete_files():
                 except Exception as e:
                     log.error(f"Failed to delete {f}: {e}")
     return JSONResponse(status_code=200, content={"status": "success", "message": f"Deleted {deleted_count} files."})
+
+
+@app.get("/download/csv")
+async def download_csv():
+    repo = SqliteContactRepository(db_path=DB_OUTPUT)
+    return StreamingResponse(
+        repo.stream_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=extracted_emails.csv"}
+    )
+
+@app.get("/download/txt")
+async def download_txt():
+    repo = SqliteContactRepository(db_path=DB_OUTPUT)
+    return StreamingResponse(
+        repo.stream_txt(),
+        media_type="text/plain",
+        headers={"Content-Disposition": "attachment; filename=extracted_emails.txt"}
+    )
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
