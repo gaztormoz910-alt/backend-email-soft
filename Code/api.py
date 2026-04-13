@@ -6,7 +6,7 @@ from fastapi import BackgroundTasks, FastAPI, WebSocket, WebSocketDisconnect, Fi
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import LOCAL_SCAN_DIR, DB_OUTPUT
+from config import LOCAL_SCAN_DIR, DB_OUTPUT, FRONTEND_URL
 
 from websocket_manager import ws_manager
 from email_extractor.infrastructure.sqlite_repository import SqliteContactRepository
@@ -20,9 +20,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
+origins = [url.strip() for url in FRONTEND_URL.split(",") if url.strip()]
+if not origins:
+    origins = ["http://localhost:5173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
