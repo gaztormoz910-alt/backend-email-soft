@@ -17,8 +17,8 @@ from pathlib import Path
 try:
     from dotenv import load_dotenv
 
-    # Ищем .env в папке Code/ рядом с config.py
-    _env_path = Path(__file__).parent / ".env"
+    # Ищем .env в корне проекта (на уровень выше, чем Code/)
+    _env_path = Path(__file__).parent.parent / ".env"
     load_dotenv(dotenv_path=_env_path, override=False)
 except ImportError:
     pass  # python-dotenv не установлен — используем os.environ как есть
