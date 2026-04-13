@@ -97,6 +97,8 @@ async def stop_extraction():
     if not core_main._IS_RUNNING:
         return JSONResponse(status_code=400, content={"status": "error", "message": "Парсинг сейчас не запущен."})
     core_main._STOP_REQUESTED = True
+    if hasattr(core_main, "_CURRENT_TASK") and core_main._CURRENT_TASK:
+        core_main._CURRENT_TASK.cancel()
     return JSONResponse(status_code=200, content={"status": "success", "message": "Отправлен сигнал на остановку."})
 
 @app.post("/cancel")
@@ -104,6 +106,8 @@ async def cancel_extraction():
     if not core_main._IS_RUNNING:
         return JSONResponse(status_code=400, content={"status": "error", "message": "Парсинг сейчас не запущен."})
     core_main._CANCEL_REQUESTED = True
+    if hasattr(core_main, "_CURRENT_TASK") and core_main._CURRENT_TASK:
+        core_main._CURRENT_TASK.cancel()
     return JSONResponse(status_code=200, content={"status": "success", "message": "Отправлен сигнал на отмену."})
 
 @app.delete("/files")

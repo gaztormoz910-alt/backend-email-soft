@@ -208,22 +208,39 @@ _IS_RUNNING = False
 _STOP_REQUESTED = False
 _CANCEL_REQUESTED = False
 _START_TIME = None
+_CURRENT_TASK = None
 
 async def main() -> None:
-    global _IS_RUNNING, _STOP_REQUESTED, _CANCEL_REQUESTED, _START_TIME
+    global _IS_RUNNING, _STOP_REQUESTED, _CANCEL_REQUESTED, _START_TIME, _CURRENT_TASK
     if _IS_RUNNING:
         log.warning("⚠ Экстракция уже запущена. Повторный вызов пропущен.")
         return
     _IS_RUNNING = True
     _STOP_REQUESTED = False
     _CANCEL_REQUESTED = False
+    _CURRENT_TASK = asyncio.current_task()
     try:
         await _main_logic()
+    except asyncio.CancelledError:
+        log.warning("🛑 ЗАДАЧА БЫЛА ЖЕСТКО ОТМЕНЕНА/ОСТАНОВЛЕНА")
+        if _CANCEL_REQUESTED:
+            ws_manager.clear_history()
+            ws_manager.email_count = 0
+            asyncio.create_task(ws_manager.send_count(0))
+            if CHECKPOINT_FILE.exists():
+                CHECKPOINT_FILE.unlink()
+            repo = SqliteContactRepository(db_path=DB_OUTPUT)
+            repo.clear_all()
+        elif _STOP_REQUESTED:
+            # При остановке только сохраняем прогресс и все
+            checkpoint = _load_checkpoint()
+            _save_checkpoint(checkpoint)
     except Exception as exc:
         log.error("💥 Ошибка парсинга: %s", exc, exc_info=True)
     finally:
         _IS_RUNNING = False
         _START_TIME = None
+        _CURRENT_TASK = None
 
 
 async def _main_logic() -> None:
