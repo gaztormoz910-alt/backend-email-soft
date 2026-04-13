@@ -250,6 +250,13 @@ async def _main_logic() -> None:
     # Инициализация компонентов
     # ------------------------------------------------------------------
     repo = SqliteContactRepository(db_path=DB_OUTPUT)
+    
+    # Если файла контрольной точки нет, значит это НОВЫЙ запуск, а не продолжение (Pause).
+    # Очищаем базу, чтобы старые письма не смешивались с новыми.
+    if not CHECKPOINT_FILE.exists():
+        repo.clear_all()
+        ws_manager.email_count = 0
+        
     mx = MxChecker()
     extractor = EmailExtractorService()
     sem = asyncio.Semaphore(MAX_CONCURRENT)
@@ -375,9 +382,18 @@ async def _main_logic() -> None:
     # Сохранение результатов
     # ------------------------------------------------------------------
     if _CANCEL_REQUESTED:
-        msg_cancel = "🛑 СЕССИЯ ОТМЕНЕНА. Результаты отброшены, прогресс не сохранен."
+        # Для фронтенда мгновенно "обнуляем" интерфейс, создавая эффект стирания
+        ws_manager.clear_history()
+        ws_manager.email_count = 0
+        asyncio.create_task(ws_manager.send_count(0))
+
+        msg_cancel = "🛑 СЕССИЯ ОТМЕНЕНА. Прогресс полностью стёрт с экрана. Готов к новому старту."
         log.warning(msg_cancel)
         asyncio.create_task(ws_manager.send_log(msg_cancel))
+        
+        # Очищаем чекпоинт, чтобы при следующем запуске стерлась база данных 
+        if CHECKPOINT_FILE.exists():
+            CHECKPOINT_FILE.unlink()
     else:
         _save_checkpoint(checkpoint)
 
