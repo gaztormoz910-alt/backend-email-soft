@@ -35,10 +35,16 @@ async def healthcheck():
     """
     Эндпоинт для проверки активности сервера (Нужен для Railway/Render).
     """
+    files_count = 0
+    if LOCAL_SCAN_DIR.exists():
+        files_count = len([f for f in LOCAL_SCAN_DIR.iterdir() if f.is_file()])
+
     return {
         "status": "online",
         "service": "email-extractor",
-        "is_currently_running": core_main._IS_RUNNING
+        "is_currently_running": core_main._IS_RUNNING,
+        "start_time": getattr(core_main, "_START_TIME", None),
+        "files_count": files_count
     }
 
 
@@ -94,6 +100,22 @@ async def cancel_extraction():
         return JSONResponse(status_code=400, content={"status": "error", "message": "Парсинг сейчас не запущен."})
     core_main._CANCEL_REQUESTED = True
     return JSONResponse(status_code=200, content={"status": "success", "message": "Отправлен сигнал на отмену."})
+
+@app.delete("/files")
+async def delete_files():
+    """
+    Мгновенно удаляет все загруженные файлы из локальной директории сканирования.
+    """
+    deleted_count = 0
+    if LOCAL_SCAN_DIR.exists():
+        for f in LOCAL_SCAN_DIR.iterdir():
+            if f.is_file():
+                try:
+                    f.unlink()
+                    deleted_count += 1
+                except Exception as e:
+                    log.error(f"Failed to delete {f}: {e}")
+    return JSONResponse(status_code=200, content={"status": "success", "message": f"Deleted {deleted_count} files."})
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

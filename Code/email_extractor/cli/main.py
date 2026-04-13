@@ -207,9 +207,10 @@ async def _process_url(
 _IS_RUNNING = False
 _STOP_REQUESTED = False
 _CANCEL_REQUESTED = False
+_START_TIME = None
 
 async def main() -> None:
-    global _IS_RUNNING, _STOP_REQUESTED, _CANCEL_REQUESTED
+    global _IS_RUNNING, _STOP_REQUESTED, _CANCEL_REQUESTED, _START_TIME
     if _IS_RUNNING:
         log.warning("⚠ Экстракция уже запущена. Повторный вызов пропущен.")
         return
@@ -222,15 +223,17 @@ async def main() -> None:
         log.error("💥 Ошибка парсинга: %s", exc, exc_info=True)
     finally:
         _IS_RUNNING = False
+        _START_TIME = None
 
 
 async def _main_logic() -> None:
-    global _STOP_REQUESTED, _CANCEL_REQUESTED
+    global _STOP_REQUESTED, _CANCEL_REQUESTED, _START_TIME
     logging.basicConfig(
         level=getattr(logging, LOG_LEVEL, logging.INFO),
         format=LOG_FORMAT,
         datefmt=LOG_DATE_FORMAT,
     )
+    _START_TIME = datetime.now().timestamp()
     start_time = datetime.now()
 
     msg_start = "🚀 ЗАПУСК EMAIL EXTRACTOR v12.0 FINAL — MAXIMUM OVERDRIVE"
