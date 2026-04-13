@@ -1,8 +1,11 @@
 import asyncio
 import logging
 
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import BackgroundTasks, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+from websocket_manager import ws_manager
 
 # Подключаем функцию main из CLI
 from email_extractor.cli.main import main, _IS_RUNNING
@@ -11,6 +14,14 @@ app = FastAPI(
     title="Email Extractor API",
     description="API для удаленного запуска фонового парсинга email-адресов",
     version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 log = logging.getLogger("api")
@@ -56,3 +67,13 @@ async def start_extraction(background_tasks: BackgroundTasks):
             "is_running": True
         }
     )
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Просто поддерживаем соединение, фронт не присылает команды сюда
+            data = await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)

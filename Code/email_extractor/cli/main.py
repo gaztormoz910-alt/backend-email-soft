@@ -106,6 +106,7 @@ from email_extractor.services.google_dorks import GoogleDorksDiscovery
 from email_extractor.services.local_file_scanner import LocalFileScanner
 from email_extractor.services.mx_checker import MxChecker
 from email_extractor.services.pipermail_crawler import PipermailCrawler
+from websocket_manager import ws_manager
 
 # ---------------------------------------------------------------------------
 # Вспомогательные функции
@@ -171,6 +172,7 @@ async def _process_url(
 
         found = extractor.extract_from_url_content(raw, url)
         added = 0
+        new_emails = []
 
         for contact in found:
             e = contact.email
@@ -181,9 +183,13 @@ async def _process_url(
             if e not in contacts:
                 contacts[e] = contact
                 added += 1
+                new_emails.append(e)
 
         if added:
-            log.info("   🎯 +%d адресов: %s", added, url[:70])
+            msg = f"   🎯 +{added} адресов: {url[:70]}"
+            log.info(msg)
+            asyncio.create_task(ws_manager.send_log(msg))
+            asyncio.create_task(ws_manager.send_emails(new_emails))
 
         checkpoint["processed"].append(url)
         if pbar:
@@ -219,9 +225,13 @@ async def _main_logic() -> None:
     )
     start_time = datetime.now()
 
+    msg_start = "🚀 ЗАПУСК EMAIL EXTRACTOR v12.0 FINAL — MAXIMUM OVERDRIVE"
     log.info("=" * 60)
-    log.info("🚀 ЗАПУСК EMAIL EXTRACTOR v12.0 FINAL — MAXIMUM OVERDRIVE")
+    log.info(msg_start)
     log.info("=" * 60)
+    asyncio.create_task(ws_manager.send_log("="*60))
+    asyncio.create_task(ws_manager.send_log(msg_start))
+    asyncio.create_task(ws_manager.send_log("="*60))
 
     # ------------------------------------------------------------------
     # Инициализация компонентов
@@ -248,15 +258,18 @@ async def _main_logic() -> None:
     local_contacts: list[Contact] = await asyncio.to_thread(scanner.scan, LOCAL_SCAN_DIR)
 
     with sync_tqdm(local_contacts, desc="📂 Фильтрация локальных", unit="шт") as pbar:
+        new_local = []
         for c in pbar:
             if c.email not in contacts and not is_fake_email(c.email):
                 contacts[c.email] = c
+                new_local.append(c.email)
 
-    log.info(
-        "✅ Локальные файлы добавили %d адресов. Этап: %s",
-        len(contacts) - before,
-        _format_time((datetime.now() - phase_start).total_seconds()),
-    )
+    if new_local:
+        asyncio.create_task(ws_manager.send_emails(new_local))
+
+    msg_local = f"✅ Локальные файлы добавили {len(new_local)} адресов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+    log.info(msg_local)
+    asyncio.create_task(ws_manager.send_log(msg_local))
 
     # ------------------------------------------------------------------
     # Открываем HTTP-клиент для сетевых фаз
@@ -288,11 +301,9 @@ async def _main_logic() -> None:
             await asyncio.gather(*pipermail_tasks)
         pbar.close()
 
-        log.info(
-            "✅ Обработано %d страниц Pipermail. Этап: %s",
-            len(pipermail_tasks),
-            _format_time((datetime.now() - phase_start).total_seconds()),
-        )
+        msg_piper = f"✅ Обработано {len(pipermail_tasks)} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+        log.info(msg_piper)
+        asyncio.create_task(ws_manager.send_log(msg_piper))
 
         # --------------------------------------------------------------
         # ФАЗА 2: Google Dorks
@@ -316,11 +327,9 @@ async def _main_logic() -> None:
         await asyncio.gather(*dork_tasks)
         pbar.close()
 
-        log.info(
-            "✅ Обработано %d URL из Dorks. Этап: %s",
-            len(dork_urls),
-            _format_time((datetime.now() - phase_start).total_seconds()),
-        )
+        msg_dork = f"✅ Обработано {len(dork_urls)} URL из Dorks. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+        log.info(msg_dork)
+        asyncio.create_task(ws_manager.send_log(msg_dork))
 
         # --------------------------------------------------------------
         # ФАЗА 3: GitHub
@@ -331,18 +340,21 @@ async def _main_logic() -> None:
         github = GitHubScanner(token=GITHUB_TOKEN)
         gh_contacts = await github.scan(http)
         added_gh = 0
+        new_gh = []
 
         for contact in gh_contacts:
             if contact.email not in contacts:
                 if await mx.check(contact.domain):
                     contacts[contact.email] = contact
                     added_gh += 1
+                    new_gh.append(contact.email)
+                    
+        if new_gh:
+            asyncio.create_task(ws_manager.send_emails(new_gh))
 
-        log.info(
-            "✅ GitHub добавил %d адресов. Этап: %s",
-            added_gh,
-            _format_time((datetime.now() - phase_start).total_seconds()),
-        )
+        msg_gh = f"✅ GitHub добавил {added_gh} адресов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+        log.info(msg_gh)
+        asyncio.create_task(ws_manager.send_log(msg_gh))
 
     # ------------------------------------------------------------------
     # Сохранение результатов
@@ -351,11 +363,16 @@ async def _main_logic() -> None:
     repo.save(contacts)
 
     total_elapsed = (datetime.now() - start_time).total_seconds()
-    log.info("=" * 60)
-    log.info("🏁 РАБОТА ЗАВЕРШЕНА за %s", _format_time(total_elapsed))
-    log.info("📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: %d", len(contacts))
-    log.info("💾 MX-кэш: %d доменов проверено", mx.cache_size)
-    log.info("=" * 60)
+    
+    msg_end = (
+        f"={60*'='}\n"
+        f"🏁 РАБОТА ЗАВЕРШЕНА за {_format_time(total_elapsed)}\n"
+        f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {len(contacts)}\n"
+        f"💾 MX-кэш: {mx.cache_size} доменов проверено\n"
+        f"={60*'='}"
+    )
+    log.info(msg_end)
+    asyncio.create_task(ws_manager.send_log(msg_end))
 
 
 # ---------------------------------------------------------------------------
