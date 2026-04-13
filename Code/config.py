@@ -33,7 +33,8 @@ CODE_DIR: Path = Path(__file__).parent
 PROJECT_DIR: Path = CODE_DIR.parent
 
 # Выходные файлы
-OUTPUT_DIR: Path = PROJECT_DIR
+OUTPUT_DIR: Path = PROJECT_DIR / "data"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TXT_OUTPUT: Path = OUTPUT_DIR / "emails_unique.txt"
 CSV_OUTPUT: Path = OUTPUT_DIR / "contacts.csv"
 DB_OUTPUT: Path = OUTPUT_DIR / "contacts.db"
