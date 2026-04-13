@@ -1,0 +1,50 @@
+﻿Country,"Means of Access","Type of PWS","Link to PWS Description","Link to PWS Download","Additional Information"
+LI,"Website ""Alert Swiss""",Other,https://www.alert.swiss/en/home.html,,"Liechtenstein is integrated into the swiss platform. Available in German, English, French, Italian"
+SI,"Web, Google Play Store, App Store",App,https://112opozorilo.sos112.si,,"At the moment not available, following cyber attack."
+ES,"Warning notifications in a timely manner to mobile subscribers","Cell Broadcast",https://www.interior.gob.es/opencms/gl/detalle/articulo/Interior-activa-el-Sistema-de-Avisos-a-la-Poblacion-ante-emergencias-o-catastrofe/,,"Link 1"
+ES,"Warning notifications in a timely manner to mobile subscribers","Cell Broadcast",https://contrataciondelestado.es/wps/portal/!ut/p/b0/04_Sj9CPykssy0xPLMnMz0vMAfIjU1JTC3Iy87KtUlJLEnNyUuNzMpMzSxKTgQr0w_Wj9KMyU1zLcvQjgxwj83zcI8uy83KLqozdA1NMi8yCA21t9Qtycx0BLOwE5g!!/,,"Link 2"
+HU,"VESZ Application",App,https://www.katasztrofavedelem.hu/37/vesz,https://play.google.com/store/apps/details?id=org.rsoe.android.bm_okf_push&hl=hu,"For the use of the VESZ application: 1) no pre-registration is needed 2) the knowledge of Hungarian language is needed 3) further upgrade of the application for roamers is in progress"
+HU,"VESZ Application",App,https://www.katasztrofavedelem.hu/37/vesz,https://apps.apple.com/hu/app/v%C3%A9sz/id763455946,"For the use of the VESZ application: 1) no pre-registration is needed 2) the knowledge of Hungarian language is needed 3) further upgrade of the application for roamers is in progress"
+CZ,"This emergency service is accessible to every person with a mobile device present in the targeted location at the time of broadcast. Neither application download nor user registration of any kind is required.","Location-based SMS",,,
+PL,"Text messages (Alert RCB) sends information about the threat to mobile networks operators, who immediately forward it to their subscribers. Anyone who has a mobile phone switched on, if present within the emergency messaging area (the ""danger zone""), will receive a short text message (SMS) informing about the type of threat.","Location-based SMS",https://www.gov.pl/web/rcb/alert-rcb---najwazniejsze-pytania-i-odpowiedzi,,"Alert RCB â€“ SMS warning system, available for citizens in case of local threats."
+IS,"SMS pushed to all phones connected to cells in the vicinity of an event.","Location-based SMS",,,
+HU,SMS,"Location-based SMS",,,"Legislation (only in Hungarian language): https://njt.hu/eli/UT/2020/BM/16. Location based PWS SMS will be sent from the following numbers depending on the visited network: 1840 (short number), or +36705511200."
+LT,SMS,"Cell Broadcast",https://e-seimas.lrs.lt/portal/legalAct/lt/TAD/7cada65042bf11e59cf1cfda14b526c5,,
+GR,"Smartphones set to allow reception of CB alerts","Cell Broadcast",,https://civilprotection.gov.gr/112,"Webpage of the Ministry for Climate Change and Civil Protection, with information about 112 and subscription form. CB is also enabled for roamers"
+RO,"RO-ALERT system allows sending Cell Broadcast messages to warn and alert citizens in case of emergency, according to the legal provisions.","Cell Broadcast",https://ro-alert.ro/en/about-ro-alert/,,
+FI,"Radio/TV broadcast",Other,,,
+SI,"PW with sirens",Other,,,
+FI,"Public Warning Sirens",Other,,,
+LT,"Public Warning Sirens",Other,https://lt72.lt/,,
+IT,Public,"Cell Broadcast",https://www.it-alert.gov.it,,"IT-alert. The system uses the CAP (Common Alerting Protocol), in the Italian CAP-IT profile. The system can release the messages produced in an open format, always using other standard formats (json, rss), in order to be able in future  to re-launch the IT-alert messages also on digital motorway billboards, control rooms, television but also on social networks. The system is currently in an experimental and testing phase and pilot region tests have been organized and are being organised."
+LU,N/A,"Cell Broadcast",,,
+PT,N/A,"Location-based SMS",,,"SMS warning system, available for citizens in case of local threats. Sent by the operators to their customers/roamers (in) in case of the emergency situation."
+HR,"mobile handsets","Cell Broadcast",,,
+HR,"mobile handsets","Location-based SMS",,,
+DK,"Mobile based warning","Cell broadcast",https://www.brs.dk/en/what-you-can-do/in-case-of-an-emergency/public-warnings-in-case-of-emergencies/,,
+NO,"Mobile based warning","Cell broadcast",https://www.emergencyalert.no/about-emergency-alert/,,
+AT,"Mobile based warning","Cell broadcast",https://www.at-alert.at,,
+MT,Mobile,"Cell Broadcast",,,
+LV,Messaging,Other,,,"SMS as a part of Public Warning in the case of the emergency situation. SMS (text provided by the services involved in solving of emergency situtation) is sent by the operators to their customers/abonents in case of the emergency situation."
+DK,"Emergency notifications, TV, radio,  social media accounts and sirens.",Other,https://www.brs.dk/en/what-you-can-do/in-case-of-an-emergency/public-warnings-in-case-of-emergencies/,,
+RO,"DSU is the application developed by the Ministry of Internal Affairs for mobile phones with Android and iOS systems, able to receive alerts from traffic, weather or natural calamity warnings.",App,https://fiipregatit.ro/,https://play.google.com/store/apps/details?id=ro.iconsult.dsu,"The app is free of charge and can be downloaded to phones from Google Play and AppStore."
+RO,"DSU is the application developed by the Ministry of Internal Affairs for mobile phones with Android and iOS systems, able to receive alerts from traffic, weather or natural calamity warnings.",App,https://fiipregatit.ro/,https://apps.apple.com/ro/app/dsu/id1052761007,"The app is free of charge and can be downloaded to phones from Google Play and AppStore."
+SK,"Civil defence warning signals sent out through sirens",Other,https://www.minv.sk/?varovanie-obyvatelstva-1,,
+BG,"BG-ALERT is aÂ system for distributing messages to alert the populationÂ in case of dangerous events via mobile networksÂ to the end user devices, which support theÂ Cell Broadcast ServiceÂ technology.","Cell Broadcast",https://www.bg-alert.bg/#/about-us,,"the system is under construction"
+PL,"Available by downloading free of charge",App,https://www.gov.pl/web/mswia/regionalny-system-ostrzegania,https://play.google.com/store/apps/details?id=mswia.rso,"System (RSO -Regionalny System Ostrzegania - Regional Warning System) for citizens in case of major emergencies is being developed."
+PL,"Available by downloading free of charge",App,https://www.gov.pl/web/mswia/regionalny-system-ostrzegania,https://apps.apple.com/pl/app/regionalny-system-ostrzegania/id1326612339,"System (RSO -Regionalny System Ostrzegania - Regional Warning System) for citizens in case of major emergencies is being developed."
+PL,"Available by downloading free of charge",App,https://www.gov.pl/web/mswia/regionalny-system-ostrzegania,https://apps.microsoft.com/store/detail/rso-regionalny-system-ostrzegania/9NQ6D…,"System (RSO -Regionalny System Ostrzegania - Regional Warning System) for citizens in case of major emergencies is being developed."
+NL,Automatic,"Cell Broadcast",https://crisis.nl/nl-alert/english/,,
+LI,"App ""Alert Swiss""",App,,https://apps.apple.com/ch/app/alertswiss/id957339177,
+LI,"App ""Alert Swiss""",App,,https://play.google.com/store/apps/details?id=ch.admin.babs.alertswiss,
+LU,App,App,https://infocrise.public.lu/en/gouvalert.html,https://play.google.com/store/apps/details?id=lu.ctie.gouvalertlu,
+LU,App,App,https://infocrise.public.lu/en/gouvalert.html,https://apps.apple.com/de/app/gouvalert-lu/id1299114216,
+BE,,"Location-based SMS",https://www.be-alert.be,,"inscription is automatic as soon as a user (mobile phone) is active on the national territory, user will receive warning messages if location is within a defined area."
+BE,,"Location-based SMS",https://ibz.be/nl/veiligheid#links,,"inscription is automatic as soon as a user (mobile phone) is active on the national territory, user will receive warning messages if location is within a defined area."
+BE,,Other,https://www.be-alert.be,https://www.be-alert.be,"website available in dutch, french, german and english, a user can register his phone and email to receive targeted messages additional to messages of Location-based SMS system."
+DE,,"Cell Broadcast",,,
+FI,,App,https://112.fi/en/112-suomi-application,https://112.fi/en/112-suomi-application,
+FR,,"Cell Broadcast",,,
+HR,,Other,,,"sirens, radio and TV stations"
+SE,,App,https://www.sosalarm.se/trygghet/112appen/,https://www.sosalarm.se/trygghet/112appen/,
+SE,,"Location-based SMS",https://www.sosalarm.se/trygghet/viktigt-meddelande-till-allmanheten/,,

@@ -1,0 +1,5 @@
+"Title","Username","Email","Password","Website","TOTP Secret Key","Custom Field 1","*Custom Field 2","Note","Tags"
+"Twitter","SSmithpaull","s.smithpaull@gmail.com","bet1$berry6$dogma2$Food$sss","www.twitter.com","qg4r pwyf 4t23 v62g 4ta3 ne43 74","Security Question","Security Answer","This is my personal account","Login:Other:Twiter|Private"
+"Facebook","SSmithpaull","s.smithpaull@gmail.com","3cotty-6nyu-some-Dar-Ababa7","www.facebook.com",,"Custom Value","Sensitive value","My Facebook Account","Login:My:Facebook|Private"
+"Google",,"s.smithpaull@gmail.com","vUc?ywJ7j3&4fznpD*rW","www.accounts.google.com","lk4r gyin 4t56 v27g 4ta7 gh23 k47","Custom Value","Sensitive value","One account for all Google logins","Social"
+"Amazon",,"s.smithpaull@gmail.com","swing brice froze pilot tawny mesh","www.amazon.com",,"Custom Value","Sensitive value","My Favorite shopping website","Shopping"

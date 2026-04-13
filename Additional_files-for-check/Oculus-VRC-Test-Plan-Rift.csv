@@ -1,0 +1,291 @@
+"Meets all content requirements","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.Content.1","Required","The app must meet all content guidelines.","
+          1. Examine the app’s metadata.
+          2. Examine the app’s in-app content.
+        ","The application meets all content guidelines.","","For more information, see Content Guidelines."
+"VRC.Content.2","Required","The apps’s metadata must match the content of the app.","
+          1. Examine the app’s metadata.
+          2. Examine the app’s in-app content.
+        ","The apps’s metadata must match the content of the app.
+         ","","For more information, see Content Guidelines.
+         "
+"VRC.Content.3","Required","Applications with user-generated content, including synchronous or asynchronous multiplayer environments, must have a form for users to notify the developer about conduct in the application that does not adhere to the Code of Conduct in Virtual Experiences. This reporting form must always be accessible to the user from the Meta Quest button. Users may also access the reporting form from other actions within the app.","
+          1. Launch the title.
+          2. Enter a multiplayer space.
+          3. Press the meta quest button button.
+          4. Select Report.
+          5. Enter the requested information into the form and click submit.
+        ","The user can successfully file a report and see the success dialog.","","For more information, see Content Guidelines."
+"","","","","","",""
+"Meets all audio requirements","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.PC.Audio.1","Recommended","App must target the audio device selected in the ""Audio Output in VR"" setting in the Oculus app.","
+          1. Plug in a set of headphones
+          2. In the Windows Sound settings, set the headphones to be the default audio device
+          3. In the Oculus Home app, open the Devices settings and select Rift, then ensure the ""Audio Output in VR"" setting is set to ""Rift headphones.""
+          4. Launch the app and listen for audio to play.
+        ","The VRC Validator will report ""INFO: Test PASSED"". If testing manually, your application's audio should come from the Rift headset, not from the headphones plugged into the PC.","","You only need to check this on app start. Using the VRC Validator: https://developer.oculus.com/documentation/pcsdk/latest/concepts/dg-vrcvalidator/"
+"VRC.PC.Audio.2","Recommended","Apps should support 3D audio spatialization, although it is not required.","Locate a sound source within the app and rotate your head
+        ","Sound should switch appropriately between speakers","","https://developer.oculus.com/documentation/audiosdk/latest/concepts/audio-intro-spatialization/"
+"","","","","","",""
+"Meets all graphics and performance requirements","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.PC.Performance.1","Required","App should display graphics and respond to head tracking within 4 seconds of launch.","
+          1. Launch the title
+          2. Count the number of seconds it takes to display something and respond to head tracking
+        ","App begins accepting input, responds to head tracking, and displays graphics within 4 seconds of app startup.","","If your app takes longer than 4 seconds to launch, you must provide a head-tracked loading indicator. Head-tracked means the UI elements must remain stationary in space when the user turns their head. Do not lock any logos or progress indicators to the user’s head movement."
+"VRC.PC.Performance.7","Required","App must render without convergence errors or unusual distortion","
+          1. Launch the title
+          2. Play through content for at least 45 minutes
+        ","Objects should render normally without distortion, stretching when moving your head, or feeling like they're being rendered too close to your face","","https://developer.oculus.com/resources/vrc-pc-performance-7/"
+"VRC.PC.Performance.8","Required","App must render without visible z-fighting or depth conflict artifacts","
+          1. Launch the title
+          2. Play through content for at least 45 minutes
+        ","Objects should render normally. Examples of failure include objects appearing to flicker back and forth, colliding because they think they're at the same depth","",""
+"VRC.PC.Performance.9","Required","The app should render head-locked UI elements in a compositor layer to avoid judder if the app misses frames or runs with Asynchronous Spacewarp.","
+          1. Use Oculus Debug Tool to disable Asynchronous Spacewarp (ASW)
+          2. Look for judder in headlocked elements
+        ","Objects should look just as smooth as if the app is running at 90 FPS (Rift) or 80 FPS (Rift S)","","VR compositor layers update independent of the app frame rate. See VR Compositor Layers: https://developer.oculus.com/documentation/game-engines/latest/concepts/unity-rendering/#unity-ovroverlay"
+"VRC.PC.Performance.10","Recommended","The app must not synchronize animation or physics to an assumed 90Hz/80Hz frame rate.","
+          1. Observe animation
+          2. Use the Oculus Debug Tool to select Force 45/40 fps, ASW disabled
+          3. Observe animation
+        ","Animations should continue to play at normal speed.","","Dropped frames and Asynchronous Spacewarp reduce frame rate below 90 FPS (Rift) or 80 FPS (Rift S) and causes those animations to play out of sync with the displayed frame."
+"","","","","","",""
+"Meets all functional requirements","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.PC.Functional.1","Required","App must install and run without crashes, freezes, or extended unresponsive states.","
+          1. Launch the title
+          2. Play through content for at least 45 minutes
+        ","App installs and runs without crashing or freezing.","",""
+"VRC.PC.Functional.2","Required","The user must not be required to interact with their desktop before the app launches in VR.","
+          Prerequisite: Check must be done on a PC that does not have a firewall exception for the title. Steps:
+          1. Launch Oculus Home
+          2. Locate and download the title to be checked
+          3. Launch the title for the first time from Oculus Home (within the HMD)
+        ","Title should launch free of any interrupts, such as Windows Firewall, Windows UAC, or Unity graphics mode dialog boxes.","","In Unity, set ""Display Resolution Dialog"" to ""Hidden by Default."" See Standalone Player Settings in the Unity documentation:  https://docs.unity3d.com/Manual/class-PlayerSettingsStandalone.html"
+"VRC.PC.Functional.3","Recommended","Single player apps must pause when the user removes the HMD or opens Dash.","
+          1. Launch the title
+          2. Press the Oculus button or take off the HMD
+        ","App should pause or react within 10 seconds.","","Not required for multiplayer/realtime games."
+"VRC.PC.Functional.4","Recommended","The app must not lose the user's data","
+          1. Launch the title
+          2. Play through part of the content
+          3. Quit and restart the app
+        ","All user saves, settings, downloads, and content created within the app persist throughout use of the application","",""
+"VRC.PC.Functional.5","Required","The app must not leave the user stuck at any point in the experience.","
+          1. Launch the title
+          2. Play through content for at least 45 minutes
+        ","User must be able to play through the entire title without being unable to progress or requiring unobtainable information.","","For example, if you require a login, we must have instructions and be able to successfully create an account — the instructions must be discoverable in VR, but account creation could happen in 2D. Game levels must not have broken logic that prevents progressing to the next level."
+"VRC.PC.Functional.6","Recommended","If the app supports a desktop mode, it must launch and be playable on the standard display without the use of the HMD or Oculus Touch controllers.","
+          1. Launch the app in 2d mode
+          2. Play through one level of the content
+        ","App must not require HMD or Touch controllers","","For specific recommendations on switching between 2D desktop mode and VR modes, see Rift Apps with Non-VR Desktop Modes:  https://developer.oculus.com/distribute/latest/concepts/publish-packaging-rift-desktopmode/"
+"VRC.PC.Functional.7","Required","The application must respond to the HMD's positional tracking as well as orientation.","
+          1. Launch the title
+          2. Lean forward and side to side within app
+        ","Your view should look as if you are moving within the VR world","","Not required for 360 videos"
+"VRC.PC.Functional.8","Required","App must not include non-Oculus HMDs or controllers within the title or Store assets.","
+          1. Launch the title
+          2. Play through one level of content
+        ","App should only reference Oculus HMDs, Touch controllers, Oculus Remote, or Xbox controller","",""
+"","","","","","",""
+"Meets all input and reserved interaction requirements","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.PC.Input.1","Recommended","The app must not submit frames or accept input when the user removes the HMD or opens Oculus Dash.
+If HMD is off, app should neither submit frames nor accept input.
+If an app does NOT support Dash / Lifecycle 2.0, then the app should neither submit frames nor accept input.
+If an app does support Dash, then it should NOT accept input, but it SHOULD submit frames.
+In all cases, the app should “pause” unless it’s multiplayer, in which case it can pause or not.","
+          1. Launch the title
+          2. Press the Oculus Home Button
+          3. Observe: This should launch Oculus Home and bring up Dash
+        ","Performance shouldn't drop, and moving the controllers shouldn't cause interaction within the app.","",""
+"VRC.PC.Input.2","Recommended","Single player apps must pause while Dash is up.","
+          1. Launch the title
+          2. Play through part of the content 3. Open and then close Dash
+        ","App content should still be right where you left off","",""
+"VRC.PC.Input.3","Required","Selecting Reset View in Dash must reset the user’s position and orientation.","
+          1. Launch the title
+          2. Press the Oculus Home Button
+          3. Observe: This should launch Oculus Home and bring up Dash  4. Reorient through Dash
+          5. Return to game
+        ","Apps that do not use the Oculus Guardian System play area should reset the user's home position and orientation to their current position and orientation, using the built-in Oculus API functionality. Apps that use the Oculus Guardian System play area may use more advanced reorientation logic. If Oculus Guardian System bounds are not configured, re-center must work regardless of app tracking or movement type.","",""
+"VRC.PC.Input.4","Required","Selecting ""Quit App"" from Dash must exit to Oculus Home.","
+          1. Launch the title
+          2. Press the Oculus Home Button
+          3. Observe: This should launch Oculus Home and bring up Dash
+          4. Select Quit App
+          5. Observe: Warning says that game will exit
+        ","App successfully exits to Oculus Home","",""
+"VRC.PC.Input.5","Recommended","The app must map all the buttons a user needs to all the controllers that the app supports.","
+          1. Launch the title
+          2. Play through several levels of the game with all supported controllers
+        ","App should be useable with all supported controllers","",""
+"VRC.PC.Input.6","Recommended","The app must not claim Oculus Touch as a supported input device unless Touch position and orientation data facilitate player movement or manipulate the environment.","
+          1. Launch the title
+          2. Play through several levels of the game
+        ","The app must use Touch controllers to be able to grab things or interact with the environment.","","Apps that merely emulate gamepad control schemes using Touch must not indicate Oculus Touch as a supported input device and shall indicate ""Touch (as Gamepad)"" instead."
+"VRC.PC.Input.7","Recommended","In-game menus should be activated with the menu button on the gamepad controller or the menu button on the left Oculus Touch controller.","
+          1. Launch the title
+          2. Click the menu button
+        ","App should open an in-game menu, if applicable.","",""
+"VRC.PC.Input.8","Recommended","When picking up objects within the app, use the Touch controller's grip button rather than the trigger button.","
+          1. Launch the title
+          2. Pick up an object
+        ","Best practice is to use grip button rather than trigger","","https://developer.oculus.com/blog/implementing-quality-hands-with-oculus-touch/"
+"VRC.PC.Input.9","Recommended","If an app is “focus aware,” it must continue rendering while Dash is up, but hide any user hands or controllers and ignore all input.","
+          1. Press the Oculus menu button on the controller
+          2. Observe: if Dash appears on top of the currently running and rendering app, it is configured to be focus aware.  If you see a gray room with menu items directly in front of your face, the app is not focus aware and other VRCs related to Dash will apply.
+          3. Observe the app rendering
+          4. Move the Touch controllers around, click buttons
+        ","User should only be able to interact with Dash overlay elements while the app continues to render in the background. To avoid duplicate interactions, in-app hand or controller movement should not render while Dash is up. If the app has pause functionality (users can pause, or the app pauses in menus, or it pauses when the HMD is off) then it should pause while Dash is up.","","Focus aware support is not required.  If not enabled, users will see Dash overlaid on an empty gray void.."
+"VRC.PC.Input.10","Recommended","In-application hands and controllers should line up with the user’s real-world counterparts in position and orientation as closely as possible.","While using your app, hold your hands in front of your face and raise your headset slightly so you can compare your real-world hands and your virtual hands.  Repeat this process with your hands at different angles and positions in order to observe and correct any disparities. ","In-application hands should match your real-world hands.","","https://developer.oculus.com/blog/implementing-quality-hands-with-oculus-touch/"
+"","","","","","",""
+"Meets all player mode and tracking mode requirements","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.PC.Tracking.1","Required","When configuring the submission metadata for your app, it must meet the requirements for either sitting, standing, or roomscale play modes.","
+          1. Launch the title
+          2. Play through several levels
+        ","Sitting: no action requires you to stand or reach down to the ground. Standing: You are able to interact with all game elements while standing. If interacting with items on the floor, you must implement distance grabbing. Roomscale: The app must be completely usable within a 7' x 5' play area with a 3-sensor roomscale setup (Rift), or a 7' x 7' play area (Rift S).","",""
+"VRC.PC.Tracking.2","Recommended","When configuring the submission metadata for your app, it must meet the requirements for either front-facing or 360 tracking modes.","
+          1. Launch the title
+          2. Play through several levels
+        ","
+          Front-facing:
+          1. The app must be completely usable with the standard 2-sensor desk set up
+          2. The app must provide a way for users to pick up VR objects on the ground even if the desk occludes the sensors
+          3. The app must not require users to interact with content behind them. If you place content behind the user, the app must take steps to keep the user facing frontwards to avoid occluding the sensors with their body
+          360:
+          1. The app must provide interactive content behind the user
+          2. If the app is roomscale, the app must be completely usable with the 3-sensor setup
+          3. If the app is not roomscale, the app must be completely usable with the 2-sensor 360 experimental setup
+        ","",""
+"","","","","","",""
+"Meets all accessibility requirements","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.PC.Accessibility.1","Recommended","Application should be playable in its entirety without the use of audio, or provide subtitle options for in-application dialogue and/or sound effects to communicate progress to the user.","
+          1. Launch the title
+          2. Play through the application content without audio
+          3. Enable subtitles
+          4. Verify that you see subtitles for dialogue and sound effects
+        ","Application should be playable with no audio or should provide subtitles for all dialogue and sound effects.","","For more information, see: Designing Accessible VR Doc - Subtitles"
+"VRC.PC.Accessibility.2","Recommended","Text and in-app controls and elements necessary for app progression should be clearly legible. When possible, provide options for increased contrast and/or larger UI elements.","
+          1. Launch the title
+          2. Verify that in-app text and UI elements are clear and easy to see (Optional)
+          3. Improve contrast of UI elements or increase size of UI elements
+        ","All in-application UI elements and text should be clearly legible. Elements should also be edited when possible to increase size or contrast.","","For more information, see: Designing Accessible VR Doc - UI/UX design"
+"VRC.PC.Accessibility.3","Recommended","When possible, the application should provide clarity and direction to the user through a combination of visual, audio, and/or haptic feedback instead of relying on just one form of feedback.","
+          1. Launch the title
+          2. Check that in-game interaction feedback is delivered thorugh multiple cues (visual, audio and haptic)  as you play through the applicaiton content
+        ","In-application interactions should provide feedback to the user via multple cues including audio, haptic, and visual cues.","","For more information, see: Designing Accessible VR Doc - Design"
+"VRC.PC.Accessibility.4","Recommended","Applications should provide an option to be played with one hand and/or controller. Enabling the user to configure their control options is ideal.","
+          1. Launch the title
+          2. Play through the application content using one controller (Optional)
+          3. Configure the controller through an in-game menu
+        ","Application should be playable with one controller or should allow people to configure their controllers to different configurations.","","For more information, see: Designing Accessible VR Doc - Controller Configurations"
+"VRC.PC.Accessibility.5","Recommended","Applications should enable people to edit their display settings such as brightness and contrast to accommodate their visual needs.","
+          1. Launch the title
+          2. Go to Display settings
+          3. Confim that you are able to change the brightness and contrast
+        ","People should be able to adjust in-application brightness and contrast per their preferences.","","For more information, see: Designing Accessible VR Doc - Display Settings"
+"VRC.PC.Accessibility.6","Recommended","Applications should either provide color blindness options, or use other techniques such as combining color and pattern for easy visual distinction.","
+          1. Launch the title
+          2. Go to settings
+          3. Confirm that you are able to edit Color Blindness Settings
+        ","People should be able to adjust their in-game settings to account for color blindness","","For more information, see: Designing Accessible VR Doc - Color Blindness"
+"VRC.PC.Accessibility.7","Recommended","Applications should provide the user with the option to rotate their view without physically moving their head/neck.","
+          1. Launch the title
+          2. Confirm you are able to move the player view without physically moving your head/neck
+        ","People should be able to rotate the camera perspective/view without physically moving their head using their controllers or other methods.","","For more information, see: Designing Accessible VR Doc - Movement and Locomotion"
+"VRC.PC.Accessibility.8","Recommended","Applications should support multiple locomotion styles when possible. This includes, but is not limited to, teleportation, free locomotion, and snap turning.","
+          1. Launch the title
+          2. Verify that you can move the player using more than 1 locomotion/movement method
+        ","People should be able to move in your application using multiple methods.","","For more information, see: Designing Accessible VR Doc - Movement and Locomotion"
+"","","","","","",""
+"These VRCs ensure your app meets publishing requirements.","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.Publishing.1","Required","The App Website URL must link directly to a valid page.","
+          1. Navigate to the App Website URL. 
+          2. Examine the website.
+        ","The page must load. 
+The page must meet Facebook Community Standards. 
+The page must not be hosted on another distributiom platform.","","The page must load content relevant to the app or publisher. 
+The page must not contain content that violates the Facebook Community Standards. 
+The page must not be hosted on another distribution platform."
+"VRC.Publishing.2","Required","An External Support Link URL is optional, but if one is provided it must link directly to a valid support page.","
+          1. If one is provided, navigate to the app’s External Support Link. 
+          2. Examine the website.
+        ","The page must load. 
+The page must meet Content Guidelines. 
+The page must not be hosted on another distribution platform. 
+The provided website must provide some way to contact support for your app or organization.","","A support website is a location where users have clear means to contact the developer of the app such as an email address or a social media link."
+"VRC.Publishing.3","Required","A Terms of Service URL is optional, but if one is provided, it must link directly to a page that contains a terms of service. ","
+          1. If one is provided, navigate to the app’s Terms of Service URL. 
+          2. Examine the website.
+        ","The page must load. 
+The page must meet Content Guidelines. 
+The page must not be hosted on another distribution platform. 
+The page must display a Terms of Service.","","The page must not require users to download documents or be hosted on another distribution platform."
+"","","","","","",""
+"These VRCs ensure your app meets publishing requirements.","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.Publishing.4","Required","The app’s Name must meet all content guidelines.","
+          1. Examine the app’s Name.
+        ","The Display Name must be unique to the app and not be a string of keywords obviously designed to abuse search engines.","","The name must not be a string of keywords designed to abuse search engines. 
+The name must be unique to the app. 
+For more information, see Content Guidelines."
+"VRC.Publishing.5","Required","The app’s Short Description must meet all content guidelines.","
+          1. Examine the app’s Short Description.
+        ","The app’s Short Description must not violate the content guidelines.","","For more information, see Content Guidelines."
+"VRC.Publishing.6","Required","The app’s Long Description must meet all content guidelines.","
+          1. Examine the app’s Long Description.
+        ","The app’s Long Description must not violate the content guidelines.","","For more information, see Content Guidelines."
+"VRC.Publishing.7","Required","Search Keywords must be relevant to the app and meet all content guidelines.","
+          1. Examine the application’s Search Keywords list.
+        ","Keywords must not include intellectual property your organization does not have rights to. 
+The keywords provided must be relevant to the app.","","For more information, see Content Guidelines."
+"VRC.Publishing.8","Required","Any use of the Oculus brand in app metadata must meet Oculus Brand Guidelines.","
+          1. Examine the app’s metadata, specifically, the Description fields and art assets such as Cover Art, PDP Art, and Trailer.
+        ","If the Oculus brand is used in any of the app’s metadata, it must meet Oculus Brand Guidelines.","","For more information, see Oculus Brand Guidelines."
+"","","","","","",""
+"Meets all store asset requirements","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.PC.Asset.1","Recommended","Logo must be on a transparent background.","
+          1. Open logo art in an image editing program
+          2. Check background for transparency
+        ","Background is transparent","","An ideal logo fills the cover image frame, leaving the 20% at top and bottom and 10% on the sides.  More information is available here: https://securecdn.oculus.com/sr/store-art-guidelines"
+"VRC.PC.Asset.2","Recommended","Store cover art images must have a clear logo without extraneous text, taglines, or banners.","
+          1. View the cover art images
+        ","Cover art consists of only the logo on a well-designed background.","","https://securecdn.oculus.com/sr/store-art-guidelines"
+"VRC.PC.Asset.3","Recommended","Store cover art must not include text in the top or bottom 20% of the image.","
+          1. View the cover art images
+        ","Top and bottom of the cover images don't include text, badges, or other busy patterns that would make an overlay illegible.","","https://securecdn.oculus.com/sr/store-art-guidelines"
+"VRC.PC.Asset.4","Recommended","Hero art must include the branding of the app centered in the image.","
+          1. View the hero art image
+        ","App branding/logo must be centered vertically and horizontally.","","https://securecdn.oculus.com/sr/store-art-guidelines"
+"VRC.PC.Asset.5","Required","Screenshots must be representative of the app and don't contain any additional logos, text, or iconography.","
+          1. View screenshot
+        ","Image is an unembellished screenshot of the app experience.","","https://securecdn.oculus.com/sr/store-art-guidelines"
+"VRC.PC.Asset.6","Required","App description, screenshots, and videos must not include HMDs, controllers, or logos for other VR platforms.","
+          1. View the images and description
+        ","App metadata doesn't include any other VR hardware or software platforms other than Oculus and Samsung.","","Limited mention of other VR platforms is acceptable if app supports cross platform play."
+"VRC.PC.Asset.8","Recommended","Artwork asset text should not use a font smaller than 24 pt. ","
+          1. Open original art assets in an image editing program
+          2. Check the font size
+        ","All text should be 24 pt. font or larger.","","https://securecdn.oculus.com/sr/store-art-guidelines"
+"","","","","","",""
+"Meets all Privacy Policy requirements:","","","","","",""
+"ID","Enforcement","Criterion","Steps To Test","Expected Result","Actual Result","More Info"
+"VRC.Privacy.1","Required","Privacy Policy URL links to a privacy policy statement managed by the app’s Organization.","
+          1. Click on the privacy policy link provided
+          2. Is the Privacy Policy live? A Privacy Policy URL is considered Live if it doesn't return a HTTP error code or error message such as “page can not be found”, “bad gateway”, redirects to a homepage, etc. Note: PDF files for download would also be sufficient
+          3. Is the link publicly available? “Publicly available” means the user does not have to provide data prior to getting access to the developer’s privacy policy
+          4. Does the linked page take you to a “privacy policy”? The only thing that needs to be present in this page is the “Privacy Policy” term that could be in the heading OR within the text content - however we will also accept variations of it such as:  Terms of Services, Terms and Conditions, Data Collection, Privacy Policy, Protection of Personal Data, Data Policy, GDPR (General Data Processing Regulation), Confidentiality Agreement, Policy of Personal Data, Data Management Policy, etc. (a title/heading is not mandatory in order to be compliant). Privacy Policies should be owned by the organization or parent organization
+          ","Link is Live, Publicly available and is a Privacy Policy.","",""
+"","","","","","",""
+"","","","","","",""
+"Version","Internal","","","","",""
+"Rift Build.1","UmlmdCBCdWlsZC4xLjE0LjAuMjAyNg==","","","","",""
+"Rift PDP.1","UmlmdCBQRFAuMS4xMi4wLjIwMjY=","","","","",""
