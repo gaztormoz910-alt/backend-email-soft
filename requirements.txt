@@ -1,0 +1,19 @@
+# Веб-сервер
+fastapi[standard]>=0.115.0
+uvicorn>=0.30.6
+
+# HTTP и парсинг
+httpx[http2]>=0.27.0
+beautifulsoup4>=4.12.3
+fake-useragent>=1.5.1
+
+# Сеть и Google Dorks
+dnspython>=2.6.1
+googlesearch-python>=1.2.3
+
+# Конфигурация и утилиты
+python-dotenv>=1.0.1
+tqdm>=4.66.4
+pandas>=2.2.2; python_version>='3.9'
+openpyxl>=3.1.2; python_version>='3.9'
+patool>=2.2.0

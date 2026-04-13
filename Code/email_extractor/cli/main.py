@@ -195,7 +195,23 @@ async def _process_url(
 # MAIN
 # ---------------------------------------------------------------------------
 
+_IS_RUNNING = False
+
 async def main() -> None:
+    global _IS_RUNNING
+    if _IS_RUNNING:
+        log.warning("⚠ Экстракция уже запущена. Повторный вызов пропущен.")
+        return
+    _IS_RUNNING = True
+    try:
+        await _main_logic()
+    except Exception as exc:
+        log.error("💥 Ошибка парсинга: %s", exc, exc_info=True)
+    finally:
+        _IS_RUNNING = False
+
+
+async def _main_logic() -> None:
     logging.basicConfig(
         level=getattr(logging, LOG_LEVEL, logging.INFO),
         format=LOG_FORMAT,
