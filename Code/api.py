@@ -15,7 +15,22 @@ from engine import parser_engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Launch the background engine worker
+    # Startup: Restore state from DB in case of server restart
+    from config import DB_OUTPUT, CHECKPOINT_FILE
+    repo = SqliteContactRepository(db_path=DB_OUTPUT)
+    count = repo.get_count()
+    if count > 0:
+        parser_engine.email_count = count
+        parser_engine.log_history.append(f"[Система] Сервер был перезапущен. Восстановлено {count} адресов из БД.")
+        # If there's data but no checkpoint, create a dummy one so the next run doesn't wipe it
+        if not CHECKPOINT_FILE.exists():
+            import json
+            try:
+                with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"processed": []}, f)
+            except:
+                pass
+
     engine_task = asyncio.create_task(parser_engine.run_engine_loop())
     yield
     # Shutdown
