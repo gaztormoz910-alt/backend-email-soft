@@ -250,6 +250,24 @@ async def _main_logic() -> None:
         format=LOG_FORMAT,
         datefmt=LOG_DATE_FORMAT,
     )
+    
+    # ------------------------------------------------------------------
+    # Worker function for optimal memory usage
+    # ------------------------------------------------------------------
+    async def _worker(queue: asyncio.Queue, http: AsyncHttpClient, sem: asyncio.Semaphore, 
+                      extractor: EmailExtractorService, mx: MxChecker, 
+                      repo: SqliteContactRepository, checkpoint: dict, pbar) -> None:
+        while True:
+            url = await queue.get()
+            try:
+                if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                    await _process_url(http, url, sem, extractor, mx, repo, checkpoint, pbar)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"Worker failed on {url}: {e}")
+            finally:
+                queue.task_done()
     _START_TIME = datetime.now().timestamp()
     start_time = datetime.now()
 
@@ -326,28 +344,44 @@ async def _main_logic() -> None:
     ) as http:
 
         # --------------------------------------------------------------
+        # Initialize Memory-safe Worker Pool
+        # --------------------------------------------------------------
+        url_queue = asyncio.Queue(maxsize=1500)
+        workers = []
+        # We start MAX_CONCURRENT workers to process the queue efficiently
+        for _ in range(MAX_CONCURRENT):
+            w = asyncio.create_task(_worker(url_queue, http, sem, extractor, mx, repo, checkpoint, None))
+            workers.append(w)
+
+        # --------------------------------------------------------------
         # ФАЗА 1: Pipermail
         # --------------------------------------------------------------
         log.info("\n📧 ЭТАП 1: Архивы Pipermail")
         phase_start = datetime.now()
-        pipermail_tasks: list[asyncio.Task] = []
         crawler = PipermailCrawler(servers=PIPERMAIL_SERVERS)
 
         pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
+        
+        # Обновляем worker'ов, чтобы передать им pbar для текущей фазы
+        for w in workers:
+            w.cancel()
+        workers = []
+        for _ in range(MAX_CONCURRENT):
+            w = asyncio.create_task(_worker(url_queue, http, sem, extractor, mx, repo, checkpoint, pbar))
+            workers.append(w)
+
+        discovered_count = 0
         async for url in crawler.discover(http):
             if _STOP_REQUESTED or _CANCEL_REQUESTED:
                 break
             if url not in checkpoint["processed"]:
-                task = asyncio.create_task(
-                    _process_url(http, url, sem, extractor, mx, repo, checkpoint, pbar)
-                )
-                pipermail_tasks.append(task)
+                await url_queue.put(url)
+                discovered_count += 1
 
-        if pipermail_tasks:
-            await asyncio.gather(*pipermail_tasks)
+        await url_queue.join()
         pbar.close()
 
-        msg_piper = f"✅ Обработано {len(pipermail_tasks)} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+        msg_piper = f"✅ Обработано {discovered_count} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
         log.info(msg_piper)
         asyncio.create_task(ws_manager.send_log(msg_piper))
 
@@ -366,16 +400,30 @@ async def _main_logic() -> None:
         dork_urls = [u for u in dork_urls if u not in checkpoint["processed"]]
 
         pbar = async_tqdm(total=len(dork_urls), desc="Обработка Dorks", unit="URL", position=0)
-        dork_tasks = [
-            _process_url(http, url, sem, extractor, mx, repo, checkpoint, pbar)
-            for url in dork_urls
-        ]
-        await asyncio.gather(*dork_tasks)
+        
+        # Обновляем worker'ов для новой фазы
+        for w in workers:
+            w.cancel()
+        workers = []
+        for _ in range(MAX_CONCURRENT):
+            w = asyncio.create_task(_worker(url_queue, http, sem, extractor, mx, repo, checkpoint, pbar))
+            workers.append(w)
+
+        for url in dork_urls:
+            if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                break
+            await url_queue.put(url)
+            
+        await url_queue.join()
         pbar.close()
 
         msg_dork = f"✅ Обработано {len(dork_urls)} URL из Dorks. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
         log.info(msg_dork)
         asyncio.create_task(ws_manager.send_log(msg_dork))
+        
+        # Завершаем worker'ов
+        for w in workers:
+            w.cancel()
 
         # --------------------------------------------------------------
         # ФАЗА 3: GitHub
