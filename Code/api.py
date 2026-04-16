@@ -101,13 +101,20 @@ async def get_state():
     if LOCAL_SCAN_DIR.exists():
         files_count = len([f for f in LOCAL_SCAN_DIR.iterdir() if f.is_file()])
         
+    start_time = getattr(core_main, "_START_TIME", None)
+    elapsed = 0
+    if start_time is not None:
+        import time
+        elapsed = time.time() - start_time
+
     return {
         "status": "online",
         "is_currently_running": parser_engine.is_running,
         "files_count": files_count,
         "email_count": parser_engine.email_count,
         "log_history": parser_engine.log_history,
-        "start_time": getattr(core_main, "_START_TIME", None)
+        "start_time": start_time,
+        "elapsed_seconds": elapsed
     }
 
 @app.post("/jobs")
