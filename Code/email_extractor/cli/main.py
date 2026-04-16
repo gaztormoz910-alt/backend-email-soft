@@ -327,7 +327,7 @@ async def _main_logic() -> None:
                     if added > 0:
                         asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.2)
             except asyncio.CancelledError:
                 break
             except Exception as e:
