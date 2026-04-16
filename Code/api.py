@@ -45,20 +45,24 @@ async def lifespan(app: FastAPI):
     
     # Автоматика для возобновления парсинга после краша Railway
     if was_interrupted:
+        parser_engine.is_running = True
+        
         async def _auto_resume():
-            msg = "[АВТОМАТИКА] Обнаружен прерванный сеанс парсинга. Даем серверу остыть 2 минуты перед авто-запуском..."
-            parser_engine.log_history.append(msg)
-            await parser_engine.broadcast({"type": "LOG", "message": msg})
-            
-            await asyncio.sleep(120)  # Ждём 2 минуты
-            
-            if not parser_engine.is_running:
+            try:
+                msg = "[АВТОМАТИКА] Обнаружен прерванный сеанс парсинга. Даем серверу остыть 2 минуты перед авто-запуском..."
+                parser_engine.log_history.append(msg)
+                await parser_engine.broadcast({"type": "LOG", "message": msg})
+                
+                await asyncio.sleep(120)  # Ждём 2 минуты
+                
                 msg_start = "[АВТОМАТИКА] Сервер охладился. Автоматически возобновляем парсинг!"
                 parser_engine.log_history.append(msg_start)
                 await parser_engine.broadcast({"type": "LOG", "message": msg_start})
                 await parser_engine.add_job()
+            except asyncio.CancelledError:
+                parser_engine.log_history.append("[АВТОМАТИКА] Автозапуск был отменён пользователем во время охлаждения.")
 
-        asyncio.create_task(_auto_resume())
+        parser_engine.auto_resume_task = asyncio.create_task(_auto_resume())
 
     yield
     # Shutdown

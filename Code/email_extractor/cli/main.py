@@ -233,6 +233,7 @@ async def main() -> None:
             pass
     except Exception as exc:
         log.error("💥 Ошибка парсинга: %s", exc, exc_info=True)
+        raise  # Пробрасываем ошибку выше, чтобы engine.py мог поймать ее и запустить авто-возобновление
     finally:
         _IS_RUNNING = False
         _START_TIME = None

@@ -14,6 +14,7 @@ class BackgroundParserEngine:
         self.is_running = False
         self.log_history = []
         self.email_count = 0
+        self.auto_resume_task = None
 
     async def run_engine_loop(self):
         log.info("BackgroundParserEngine started, waiting for jobs...")
@@ -29,8 +30,25 @@ class BackgroundParserEngine:
                 await core_main.main()
             except Exception as e:
                 log.error(f"Engine execution failure: {e}", exc_info=True)
+                # Имитируем авто-возобновление при внутренних крашах (чтобы кнопка не сбрасывалась на старт)
+                async def _internal_auto_resume():
+                    try:
+                        msg = "[АВТОМАТИКА] Ошибка внутри процесса. Даем серверу остыть 1 минуту перед авто-запуском..."
+                        self.log_history.append(msg)
+                        await self.broadcast({"type": "LOG", "message": msg})
+                        await asyncio.sleep(60)
+                        msg_start = "[АВТОМАТИКА] Возобновляем работу после внутренней ошибки..."
+                        self.log_history.append(msg_start)
+                        await self.broadcast({"type": "LOG", "message": msg_start})
+                        await self.add_job()
+                    except asyncio.CancelledError:
+                        pass
+                self.auto_resume_task = asyncio.create_task(_internal_auto_resume())
             finally:
-                self.is_running = False
+                if getattr(self, 'auto_resume_task', None) and not self.auto_resume_task.done():
+                    pass # Автоматика запущена, не меняем is_running на False
+                else:
+                    self.is_running = False
                 self.queue.task_done()
                 log.info("Job processing finished. Engine is ready for next job.")
 
@@ -48,6 +66,11 @@ class BackgroundParserEngine:
             except asyncio.QueueEmpty:
                 break
         
+        # Если находимся в стадии охлаждения (auto-resume), отменяем её
+        if getattr(self, 'auto_resume_task', None):
+            self.auto_resume_task.cancel()
+            self.auto_resume_task = None
+
         # Interact with the core module logic to halt
         import email_extractor.cli.main as core_main
         if soft_stop:
@@ -59,6 +82,8 @@ class BackgroundParserEngine:
         # If a task is currently executing in core_main, we cancel it directly
         if getattr(core_main, "_CURRENT_TASK", None):
             core_main._CURRENT_TASK.cancel()
+            
+        self.is_running = False
 
     # -- WS and State proxies --
     async def connect(self, websocket: WebSocket):
