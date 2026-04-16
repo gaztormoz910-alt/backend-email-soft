@@ -41,6 +41,14 @@ async def lifespan(app: FastAPI):
             except:
                 pass
 
+    try:
+        import os
+        if os.path.exists("data/start_time.txt"):
+            with open("data/start_time.txt", "r") as f:
+                parser_engine.job_start_time = float(f.read().strip())
+    except Exception as e:
+        log.error(f"Failed to load start_time: {e}")
+
     engine_task = asyncio.create_task(parser_engine.run_engine_loop())
     
     # Автоматика для возобновления парсинга после краша Railway
@@ -101,7 +109,7 @@ async def get_state():
     if LOCAL_SCAN_DIR.exists():
         files_count = len([f for f in LOCAL_SCAN_DIR.iterdir() if f.is_file()])
         
-    start_time = getattr(core_main, "_START_TIME", None)
+    start_time = getattr(parser_engine, "job_start_time", None)
     elapsed = 0
     if start_time is not None:
         import time

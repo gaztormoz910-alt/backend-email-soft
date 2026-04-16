@@ -15,6 +15,7 @@ class BackgroundParserEngine:
         self.log_history = []
         self.email_count = 0
         self.auto_resume_task = None
+        self.job_start_time = None
 
     async def run_engine_loop(self):
         log.info("BackgroundParserEngine started, waiting for jobs...")
@@ -54,6 +55,16 @@ class BackgroundParserEngine:
 
     async def add_job(self):
         """Add parsing job to queue"""
+        import time
+        from pathlib import Path
+        if self.job_start_time is None:
+            self.job_start_time = time.time()
+            try:
+                Path("data").mkdir(exist_ok=True)
+                with open("data/start_time.txt", "w") as f:
+                    f.write(str(self.job_start_time))
+            except Exception as e:
+                log.error(f"Failed to save start_time: {e}")
         await self.queue.put({"action": "run_parsing"})
 
     def cancel_all_jobs(self, soft_stop=False):
@@ -77,7 +88,14 @@ class BackgroundParserEngine:
             core_main._STOP_REQUESTED = True
         else:
             core_main._CANCEL_REQUESTED = True
-            self.clear_history()            
+            self.clear_history()
+            self.job_start_time = None
+            import os
+            try:
+                if os.path.exists("data/start_time.txt"):
+                    os.remove("data/start_time.txt")
+            except:
+                pass
 
         # If a task is currently executing in core_main, we cancel it directly
         if getattr(core_main, "_CURRENT_TASK", None):
