@@ -99,27 +99,18 @@ class LocalFileScanner(ILocalFileScanner):
 
     @staticmethod
     def _from_text(filepath: Path) -> list[Contact]:
-        """Прочитать файл как текст и найти email через regex."""
-        contacts = []
+        """Прочитать файл построчно как текст и найти email через regex."""
+        seen: dict[str, Contact] = {}
         try:
-            with open(filepath, "rb") as f:
-                raw = f.read()
-            for enc in ("utf-8", "latin-1", "cp1252", "cp1251"):
-                try:
-                    text = raw.decode(enc)
-                    break
-                except (UnicodeDecodeError, LookupError):
-                    pass
-            else:
-                text = raw.decode("utf-8", errors="ignore")
-
-            for email in EMAIL_RE.findall(text):
-                e = email.lower().strip()
-                if not is_fake_email(e):
-                    contacts.append(Contact.from_email_only(e))
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    for email in EMAIL_RE.findall(line):
+                        e = email.lower().strip()
+                        if not is_fake_email(e) and e not in seen:
+                            seen[e] = Contact.from_email_only(e)
         except Exception as exc:
             log.debug("✗ Ошибка чтения текста %s: %s", filepath.name, exc)
-        return contacts
+        return list(seen.values())
 
     @staticmethod
     def _from_excel(filepath: Path) -> list[Contact]:
@@ -142,48 +133,23 @@ class LocalFileScanner(ILocalFileScanner):
 
     @staticmethod
     def _from_csv(filepath: Path) -> list[Contact]:
-        """Умный CSV-парсер с поиском email-колонок."""
-        contacts: list[Contact] = []
+        """Умный CSV-парсер с построчным чтением."""
+        seen: dict[str, Contact] = {}
         try:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read()
-
-            # Сначала — regex по всему тексту
-            for e in EMAIL_RE.findall(text):
-                el = e.lower().strip()
-                if not is_fake_email(el):
-                    contacts.append(Contact.from_email_only(el))
-
-            # Затем — умный поиск по колонкам
-            try:
-                dialect = csv.Sniffer().sniff(text[:1024])
-                reader = csv.reader(io.StringIO(text), dialect)
-            except Exception:
-                reader = csv.reader(io.StringIO(text))
-
-            rows = list(reader)
-            if rows:
-                start = 1 if not any("@" in c for c in rows[0]) else 0
-                email_cols: set[int] = set()
-                for row in rows[start : start + 10]:
-                    for i, cell in enumerate(row):
-                        if "@" in cell:
-                            email_cols.add(i)
-                for row in rows[start:]:
-                    for i in email_cols:
-                        if i < len(row):
-                            for e in EMAIL_RE.findall(row[i]):
-                                el = e.lower().strip()
-                                if not is_fake_email(el):
-                                    contacts.append(Contact.from_email_only(el))
+                reader = csv.reader(f)
+                rows = []
+                
+                for row_idx, row in enumerate(reader):
+                    # Попутно проверяем регуляркой все ячейки (надежно)
+                    for cell in row:
+                        for e in EMAIL_RE.findall(cell):
+                            el = e.lower().strip()
+                            if not is_fake_email(el) and el not in seen:
+                                seen[el] = Contact.from_email_only(el)
         except Exception as exc:
             log.debug("✗ Ошибка CSV %s: %s", filepath.name, exc)
-
-        # Дедупликация
-        seen: dict[str, Contact] = {}
-        for c in contacts:
-            if c.email not in seen:
-                seen[c.email] = c
+            
         return list(seen.values())
 
     def _from_archive(self, filepath: Path) -> list[Contact]:

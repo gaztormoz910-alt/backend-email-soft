@@ -102,8 +102,8 @@ async def add_job(files: Optional[List[UploadFile]] = File(None)):
             if f.filename:
                 file_path = LOCAL_SCAN_DIR / f.filename
                 with open(file_path, "wb") as buffer:
-                    data = await f.read()
-                    buffer.write(data)
+                    while chunk := await f.read(1024 * 1024):  # Читаем чанками по 1MB
+                        buffer.write(chunk)
                     
     await parser_engine.add_job()
     
