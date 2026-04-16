@@ -97,25 +97,31 @@ class PipermailCrawler(IPipermailCrawler):
             return
 
         soup = BeautifulSoup(_decode(raw), "html.parser")
+        raw = None  # освобождаем буфер ответа немедленно
 
-        for a in soup.find_all("a", href=True):
-            href: str = a["href"]
-            if not href.endswith("/") or href.startswith("?"):
-                continue
+        list_links = [
+            urllib.parse.urljoin(base, a["href"])
+            for a in soup.find_all("a", href=True)
+            if a["href"].endswith("/") and not a["href"].startswith("?")
+        ]
+        soup.decompose()  # явно освобождаем дерево BS4
 
-            list_url = urllib.parse.urljoin(base, href)
+        for list_url in list_links:
             list_raw = await client.fetch(list_url)
             if not list_raw:
                 continue
 
             list_soup = BeautifulSoup(_decode(list_raw), "html.parser")
+            list_raw = None  # освобождаем буфер
 
-            for month_a in list_soup.find_all("a", href=True):
-                month_href: str = month_a["href"]
-                if not _MONTH_RE.match(month_href):
-                    continue
+            month_links = [
+                urllib.parse.urljoin(list_url, a["href"])
+                for a in list_soup.find_all("a", href=True)
+                if _MONTH_RE.match(a["href"])
+            ]
+            list_soup.decompose()  # явно освобождаем дерево BS4
 
-                month_url = urllib.parse.urljoin(list_url, month_href)
+            for month_url in month_links:
                 month_raw = await client.fetch(month_url)
                 if not month_raw:
                     continue
@@ -123,7 +129,15 @@ class PipermailCrawler(IPipermailCrawler):
                 await queue.put(month_url)
 
                 month_soup = BeautifulSoup(_decode(month_raw), "html.parser")
-                for file_a in month_soup.find_all("a", href=True):
-                    file_href: str = file_a["href"]
-                    if file_href.endswith((".html", ".htm")):
-                        await queue.put(urllib.parse.urljoin(month_url, file_href))
+                month_raw = None  # освобождаем буфер
+
+                file_urls = [
+                    urllib.parse.urljoin(month_url, a["href"])
+                    for a in month_soup.find_all("a", href=True)
+                    if a["href"].endswith((".html", ".htm"))
+                ]
+                month_soup.decompose()  # явно освобождаем дерево BS4
+
+                for file_url in file_urls:
+                    await queue.put(file_url)
+

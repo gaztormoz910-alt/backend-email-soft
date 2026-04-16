@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-cli/main.py — Точка входа EMAIL EXTRACTOR v12.0 FINAL
+cli/main.py — Точка входа EMAIL EXTRACTOR v12.1 (Memory-Optimized)
 
 Запуск:
     python -m email_extractor.cli.main
@@ -13,11 +13,17 @@ cli/main.py — Точка входа EMAIL EXTRACTOR v12.0 FINAL
     1. Pipermail-архивы (PipermailCrawler)
     2. Google Dorks (GoogleDorksDiscovery)
     3. GitHub коммиты (GitHubScanner)
+
+Оптимизация памяти v12.1:
+    - checkpoint["processed"] перенесён из RAM в SQLite (таблица processed_urls)
+    - MAX_CONCURRENT снижен до 20 (было 100)
+    - MAX_MB снижен до 5 (было 20)
+    - BS4 объекты явно освобождаются через decompose()
+    - MxChecker использует LRU-кэш с лимитом 5000 доменов
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import sys
 from datetime import datetime
@@ -127,24 +133,13 @@ def _format_time(seconds: float) -> str:
     return f"{s}с"
 
 
-def _load_checkpoint() -> dict:
-    if CHECKPOINT_FILE.exists():
-        try:
-            with open(CHECKPOINT_FILE, encoding="utf-8") as f:
-                data = json.load(f)
-            log.info("⏯ Продолжаем с контрольной точки. Обработано: %d URL", len(data.get("processed", [])))
-            return data
-        except Exception:
-            pass
-    return {"processed": []}
-
-
-def _save_checkpoint(checkpoint: dict) -> None:
+def _touch_checkpoint() -> None:
+    """Создать пустой файл-маркер checkpoint.json (защита от очистки БД при рестарте)."""
     try:
-        with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
-            json.dump(checkpoint, f)
+        CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CHECKPOINT_FILE.touch(exist_ok=True)
     except Exception as exc:
-        log.warning("⚠ Не удалось сохранить checkpoint: %s", exc)
+        log.warning("⚠ Не удалось создать checkpoint-маркер: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -158,25 +153,26 @@ async def _process_url(
     extractor: EmailExtractorService,
     mx: MxChecker,
     repo: SqliteContactRepository,
-    checkpoint: dict,
     pbar=None,
 ) -> int:
-    """Скачать URL, извлечь контакты, проверить MX, добавить в словарь."""
+    """Скачать URL, извлечь контакты, проверить MX, добавить в БД."""
     async with sem:
         if _STOP_REQUESTED or _CANCEL_REQUESTED:
             return 0
-            
-        if url in checkpoint["processed"]:
+
+        if repo.is_url_processed(url):
             return 0
 
         raw = await http.fetch(url)
+        # Сразу помечаем как обработанный — даже если контента нет
+        repo.mark_url_processed(url)
+
         if not raw:
-            checkpoint["processed"].append(url)
             return 0
 
         found = extractor.extract_from_url_content(raw, url)
+        raw = None  # освобождаем буфер ответа немедленно
         added = 0
-        new_emails = []
 
         for contact in found:
             e = contact.email
@@ -184,7 +180,6 @@ async def _process_url(
                 continue
             if not await mx.check(contact.domain):
                 continue
-            
             if repo.add_if_not_exists(contact):
                 added += 1
 
@@ -194,7 +189,6 @@ async def _process_url(
             asyncio.create_task(ws_manager.send_log(msg))
             asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
-        checkpoint["processed"].append(url)
         if pbar:
             pbar.update(1)
         return added
@@ -209,6 +203,7 @@ _STOP_REQUESTED = False
 _CANCEL_REQUESTED = False
 _START_TIME = None
 _CURRENT_TASK = None
+
 
 async def main() -> None:
     global _IS_RUNNING, _STOP_REQUESTED, _CANCEL_REQUESTED, _START_TIME, _CURRENT_TASK
@@ -227,14 +222,15 @@ async def main() -> None:
             ws_manager.clear_history()
             ws_manager.email_count = 0
             asyncio.create_task(ws_manager.send_count(0))
+            # Удаляем маркер и очищаем БД полностью
             if CHECKPOINT_FILE.exists():
                 CHECKPOINT_FILE.unlink()
             repo = SqliteContactRepository(db_path=DB_OUTPUT)
             repo.clear_all()
+            repo.clear_processed_urls()
         elif _STOP_REQUESTED:
-            # При остановке только сохраняем прогресс и все
-            checkpoint = _load_checkpoint()
-            _save_checkpoint(checkpoint)
+            # При паузе — данные сохранены в SQLite, маркер оставляем
+            pass
     except Exception as exc:
         log.error("💥 Ошибка парсинга: %s", exc, exc_info=True)
     finally:
@@ -250,63 +246,65 @@ async def _main_logic() -> None:
         format=LOG_FORMAT,
         datefmt=LOG_DATE_FORMAT,
     )
-    
+
     # ------------------------------------------------------------------
-    # Worker function for optimal memory usage
+    # Worker для параллельной обработки URL (без состояния в RAM)
     # ------------------------------------------------------------------
-    async def _worker(queue: asyncio.Queue, http: AsyncHttpClient, sem: asyncio.Semaphore, 
-                      extractor: EmailExtractorService, mx: MxChecker, 
-                      repo: SqliteContactRepository, checkpoint: dict, pbar) -> None:
+    async def _worker(
+        queue: asyncio.Queue,
+        http: AsyncHttpClient,
+        sem: asyncio.Semaphore,
+        extractor: EmailExtractorService,
+        mx: MxChecker,
+        repo: SqliteContactRepository,
+        pbar,
+    ) -> None:
         while True:
             url = await queue.get()
             try:
                 if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                    await _process_url(http, url, sem, extractor, mx, repo, checkpoint, pbar)
+                    await _process_url(http, url, sem, extractor, mx, repo, pbar)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 log.error(f"Worker failed on {url}: {e}")
             finally:
                 queue.task_done()
+
     _START_TIME = datetime.now().timestamp()
     start_time = datetime.now()
 
     ws_manager.clear_history()
 
-    msg_start = "🚀 ЗАПУСК EMAIL EXTRACTOR v12.0 FINAL — MAXIMUM OVERDRIVE"
+    msg_start = "🚀 ЗАПУСК EMAIL EXTRACTOR v12.1 — MEMORY OPTIMIZED"
     log.info("=" * 60)
     log.info(msg_start)
     log.info("=" * 60)
-    asyncio.create_task(ws_manager.send_log("="*60))
+    asyncio.create_task(ws_manager.send_log("=" * 60))
     asyncio.create_task(ws_manager.send_log(msg_start))
-    asyncio.create_task(ws_manager.send_log("="*60))
+    asyncio.create_task(ws_manager.send_log("=" * 60))
 
     # ------------------------------------------------------------------
     # Инициализация компонентов
     # ------------------------------------------------------------------
     repo = SqliteContactRepository(db_path=DB_OUTPUT)
-    
-    # Если файла контрольной точки нет, значит это НОВЫЙ запуск, а не продолжение (Pause).
-    # Очищаем базу, чтобы старые письма не смешивались с новыми.
+
+    # Если маркер-файл отсутствует → новый запуск → очищаем базу полностью.
+    # Если маркер есть → продолжение после паузы/краша → данные сохраняем.
     if not CHECKPOINT_FILE.exists():
         repo.clear_all()
+        repo.clear_processed_urls()
         ws_manager.email_count = 0
-        
+
     mx = MxChecker()
     extractor = EmailExtractorService()
     sem = asyncio.Semaphore(MAX_CONCURRENT)
 
-    # ------------------------------------------------------------------
-    # Загрузка checkpoint
-    # ------------------------------------------------------------------
-    checkpoint = _load_checkpoint()
-    
-    # ------------------------------------------------------------------
-    # РАННЕЕ СОХРАНЕНИЕ checkpoint:
-    # ------------------------------------------------------------------
-    # Если парсинг упадет (OOM, сбой сервера), файл checkpoint.json
-    # уже будет существовать, и следующий рестарт не очистит базу.
-    _save_checkpoint(checkpoint)
+    # Создаём маркер-файл СРАЗУ — защита от очистки БД при краше/OOM
+    _touch_checkpoint()
+
+    processed_before = repo.get_processed_count()
+    log.info("📌 Уже обработано URL (из прошлых запусков): %d", processed_before)
 
     # ------------------------------------------------------------------
     # ФАЗА 0: Локальные файлы
@@ -339,19 +337,26 @@ async def _main_logic() -> None:
     async with AsyncHttpClient(
         timeout=REQUEST_TIMEOUT,
         max_mb=MAX_MB,
-        max_connections=200,
-        max_keepalive=50,
+        max_connections=MAX_CONCURRENT * 2,
+        max_keepalive=MAX_CONCURRENT,
     ) as http:
 
         # --------------------------------------------------------------
-        # Initialize Memory-safe Worker Pool
+        # Пул воркеров (повторно используется для всех сетевых фаз)
         # --------------------------------------------------------------
-        url_queue = asyncio.Queue(maxsize=1500)
+        url_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=500)
         workers = []
-        # We start MAX_CONCURRENT workers to process the queue efficiently
-        for _ in range(MAX_CONCURRENT):
-            w = asyncio.create_task(_worker(url_queue, http, sem, extractor, mx, repo, checkpoint, None))
-            workers.append(w)
+
+        def _spawn_workers(pbar=None):
+            nonlocal workers
+            for w in workers:
+                w.cancel()
+            workers = [
+                asyncio.create_task(
+                    _worker(url_queue, http, sem, extractor, mx, repo, pbar)
+                )
+                for _ in range(MAX_CONCURRENT)
+            ]
 
         # --------------------------------------------------------------
         # ФАЗА 1: Pipermail
@@ -359,22 +364,14 @@ async def _main_logic() -> None:
         log.info("\n📧 ЭТАП 1: Архивы Pipermail")
         phase_start = datetime.now()
         crawler = PipermailCrawler(servers=PIPERMAIL_SERVERS)
-
         pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
-        
-        # Обновляем worker'ов, чтобы передать им pbar для текущей фазы
-        for w in workers:
-            w.cancel()
-        workers = []
-        for _ in range(MAX_CONCURRENT):
-            w = asyncio.create_task(_worker(url_queue, http, sem, extractor, mx, repo, checkpoint, pbar))
-            workers.append(w)
+        _spawn_workers(pbar)
 
         discovered_count = 0
         async for url in crawler.discover(http):
             if _STOP_REQUESTED or _CANCEL_REQUESTED:
                 break
-            if url not in checkpoint["processed"]:
+            if not repo.is_url_processed(url):
                 await url_queue.put(url)
                 discovered_count += 1
 
@@ -396,34 +393,29 @@ async def _main_logic() -> None:
             results_per_query=DORK_RESULTS_PER_QUERY,
             sleep_between=DORK_SLEEP,
         )
-        dork_urls = await discovery.discover(http, set(checkpoint["processed"]))
-        dork_urls = [u for u in dork_urls if u not in checkpoint["processed"]]
+        # Передаём пустой set — фильтрация дублей теперь в SQLite
+        dork_urls = await discovery.discover(http, set())
+        dork_urls = [u for u in dork_urls if not repo.is_url_processed(u)]
 
         pbar = async_tqdm(total=len(dork_urls), desc="Обработка Dorks", unit="URL", position=0)
-        
-        # Обновляем worker'ов для новой фазы
-        for w in workers:
-            w.cancel()
-        workers = []
-        for _ in range(MAX_CONCURRENT):
-            w = asyncio.create_task(_worker(url_queue, http, sem, extractor, mx, repo, checkpoint, pbar))
-            workers.append(w)
+        _spawn_workers(pbar)
 
         for url in dork_urls:
             if _STOP_REQUESTED or _CANCEL_REQUESTED:
                 break
             await url_queue.put(url)
-            
+
         await url_queue.join()
         pbar.close()
 
         msg_dork = f"✅ Обработано {len(dork_urls)} URL из Dorks. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
         log.info(msg_dork)
         asyncio.create_task(ws_manager.send_log(msg_dork))
-        
-        # Завершаем worker'ов
+
+        # Останавливаем воркеров
         for w in workers:
             w.cancel()
+        workers = []
 
         # --------------------------------------------------------------
         # ФАЗА 3: GitHub
@@ -434,7 +426,6 @@ async def _main_logic() -> None:
         github = GitHubScanner(token=GITHUB_TOKEN)
         gh_contacts = await github.scan(http)
         added_gh = 0
-        new_gh = []
 
         for contact in gh_contacts:
             if _STOP_REQUESTED or _CANCEL_REQUESTED:
@@ -442,7 +433,7 @@ async def _main_logic() -> None:
             if await mx.check(contact.domain):
                 if repo.add_if_not_exists(contact):
                     added_gh += 1
-                    
+
         if added_gh > 0:
             asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
@@ -451,32 +442,33 @@ async def _main_logic() -> None:
         asyncio.create_task(ws_manager.send_log(msg_gh))
 
     # ------------------------------------------------------------------
-    # Сохранение результатов
+    # Завершение
     # ------------------------------------------------------------------
     if _CANCEL_REQUESTED:
-        # Для фронтенда мгновенно "обнуляем" интерфейс, создавая эффект стирания
         ws_manager.clear_history()
         ws_manager.email_count = 0
         asyncio.create_task(ws_manager.send_count(0))
 
-        msg_cancel = "🛑 СЕССИЯ ОТМЕНЕНА. Прогресс полностью стёрт с экрана. Готов к новому старту."
+        msg_cancel = "🛑 СЕССИЯ ОТМЕНЕНА. Прогресс полностью стёрт. Готов к новому старту."
         log.warning(msg_cancel)
         asyncio.create_task(ws_manager.send_log(msg_cancel))
-        
-        # Очищаем чекпоинт, чтобы при следующем запуске стерлась база данных 
+
+        # Удаляем маркер — следующий старт начнёт с чистого листа
         if CHECKPOINT_FILE.exists():
             CHECKPOINT_FILE.unlink()
-    else:
-        _save_checkpoint(checkpoint)
+    # else: маркер остаётся — следующий запуск продолжит с того же места
 
     total_elapsed = (datetime.now() - start_time).total_seconds()
-    
+    total_emails = repo.get_count()
+    total_processed = repo.get_processed_count()
+
     msg_end = (
-        f"={60*'='}\n"
+        f"{'=' * 60}\n"
         f"🏁 РАБОТА ЗАВЕРШЕНА за {_format_time(total_elapsed)}\n"
-        f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {repo.get_count()}\n"
+        f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {total_emails}\n"
+        f"🔗 Обработано URL: {total_processed}\n"
         f"💾 MX-кэш: {mx.cache_size} доменов проверено\n"
-        f"={60*'='}"
+        f"{'=' * 60}"
     )
     log.info(msg_end)
     asyncio.create_task(ws_manager.send_log(msg_end))
