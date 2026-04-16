@@ -19,13 +19,19 @@ async def lifespan(app: FastAPI):
     from config import DB_OUTPUT, CHECKPOINT_FILE
     repo = SqliteContactRepository(db_path=DB_OUTPUT)
     count = repo.get_count()
-    if count > 0:
+    processed_count = repo.get_processed_count()
+    if count > 0 or processed_count > 0:
         parser_engine.email_count = count
-        parser_engine.log_history.append(f"[Система] Сервер был перезапущен. Восстановлено {count} адресов из БД.")
+        if count > 0:
+            parser_engine.log_history.append(f"[Система] Сервер был перезапущен. Восстановлено {count} адресов из БД.")
+        else:
+            parser_engine.log_history.append(f"[Система] Сервер был перезапущен. Адресов пока нет, но обработано {processed_count} URL.")
+            
         # If there's data but no checkpoint, create a dummy one so the next run doesn't wipe it
         if not CHECKPOINT_FILE.exists():
             import json
             try:
+                CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
                 with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
                     json.dump({"processed": []}, f)
             except:

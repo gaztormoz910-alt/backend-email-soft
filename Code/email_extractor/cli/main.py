@@ -295,6 +295,9 @@ async def _main_logic() -> None:
         repo.clear_all()
         repo.clear_processed_urls()
         ws_manager.email_count = 0
+    else:
+        # Восстанавливаем счетчик, так как clear_history сбросил его в 0 перед стартом
+        ws_manager.email_count = repo.get_count()
 
     mx = MxChecker()
     extractor = EmailExtractorService()
