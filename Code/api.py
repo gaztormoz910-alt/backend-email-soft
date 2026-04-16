@@ -20,6 +20,10 @@ async def lifespan(app: FastAPI):
     repo = SqliteContactRepository(db_path=DB_OUTPUT)
     count = repo.get_count()
     processed_count = repo.get_processed_count()
+    
+    # Наличие чекпоинта означает, что парсер был убит (OOM) или приостановлен
+    was_interrupted = CHECKPOINT_FILE.exists()
+
     if count > 0 or processed_count > 0:
         parser_engine.email_count = count
         if count > 0:
@@ -28,7 +32,7 @@ async def lifespan(app: FastAPI):
             parser_engine.log_history.append(f"[Система] Сервер был перезапущен. Адресов пока нет, но обработано {processed_count} URL.")
             
         # If there's data but no checkpoint, create a dummy one so the next run doesn't wipe it
-        if not CHECKPOINT_FILE.exists():
+        if not was_interrupted:
             import json
             try:
                 CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -38,6 +42,24 @@ async def lifespan(app: FastAPI):
                 pass
 
     engine_task = asyncio.create_task(parser_engine.run_engine_loop())
+    
+    # Автоматика для возобновления парсинга после краша Railway
+    if was_interrupted:
+        async def _auto_resume():
+            msg = "[АВТОМАТИКА] Обнаружен прерванный сеанс парсинга. Даем серверу остыть 2 минуты перед авто-запуском..."
+            parser_engine.log_history.append(msg)
+            await parser_engine.broadcast({"type": "LOG", "message": msg})
+            
+            await asyncio.sleep(120)  # Ждём 2 минуты
+            
+            if not parser_engine.is_running:
+                msg_start = "[АВТОМАТИКА] Сервер охладился. Автоматически возобновляем парсинг!"
+                parser_engine.log_history.append(msg_start)
+                await parser_engine.broadcast({"type": "LOG", "message": msg_start})
+                await parser_engine.add_job()
+
+        asyncio.create_task(_auto_resume())
+
     yield
     # Shutdown
     engine_task.cancel()
