@@ -85,6 +85,12 @@ class IEmailExtractorService(ABC):
             Список найденных контактов.
         """
 
+    @abstractmethod
+    async def extract_from_stream(self, stream: AsyncGenerator[str, None], url: str) -> list[Contact]:
+        """
+        Найти email-адреса в потоке данных (строках). Оптимально для памяти.
+        """
+
 
 # ---------------------------------------------------------------------------
 # Discovery ports (crawler / scanner)

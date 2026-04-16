@@ -18,6 +18,16 @@ class SqliteContactRepository:
         )
         self._lock = threading.Lock()
         self._init_db()
+        
+        self._processed_urls_cache = set()
+        self._load_processed_cache()
+
+    def _load_processed_cache(self) -> None:
+        """Предзагрузка всех обработанных URL в память для мгновенных проверок (O(1))"""
+        with self._lock:
+            cursor = self._conn.execute("SELECT url FROM processed_urls")
+            for row in cursor:
+                self._processed_urls_cache.add(row[0])
 
     def _init_db(self) -> None:
         with self._lock:
@@ -67,6 +77,29 @@ class SqliteContactRepository:
             except sqlite3.IntegrityError:
                 return False
 
+    def add_contacts_bulk(self, contacts: list[Contact]) -> int:
+        """Пакетное добавление контактов. Возвращает количество успешно добавленных (уникальных)."""
+        if not contacts:
+            return 0
+        added = 0
+        with self._lock:
+            self._conn.execute("BEGIN TRANSACTION")
+            try:
+                for c in contacts:
+                    try:
+                        self._conn.execute(
+                            "INSERT INTO contacts (email, first_name, last_name) VALUES (?, ?, ?)",
+                            (c.email, c.first_name, c.last_name),
+                        )
+                        added += 1
+                    except sqlite3.IntegrityError:
+                        pass
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+        return added
+
     def clear_all(self) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM contacts")
@@ -102,19 +135,33 @@ class SqliteContactRepository:
     # ------------------------------------------------------------------
 
     def is_url_processed(self, url: str) -> bool:
-        """Проверить, был ли URL уже обработан. O(log n) по индексу SQLite."""
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT 1 FROM processed_urls WHERE url = ? LIMIT 1", (url,)
-            )
-            return cursor.fetchone() is not None
+        """Проверить, был ли URL уже обработан. Мгновенно из ОЗУ O(1)."""
+        return url in self._processed_urls_cache
 
     def mark_url_processed(self, url: str) -> None:
-        """Пометить URL как обработанный. Игнорирует дубликаты."""
+        """Пометить URL как обработанный. (Синхронно: в кэш + в БД)"""
+        if url not in self._processed_urls_cache:
+            self._processed_urls_cache.add(url)
+            with self._lock:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO processed_urls (url) VALUES (?)", (url,)
+                )
+
+    def mark_urls_processed_bulk(self, urls: list[str]) -> None:
+        """Пакетное добавление URL в кэш и в БД."""
+        new_urls = [u for u in urls if u not in self._processed_urls_cache]
+        if not new_urls:
+            return
+        for u in new_urls:
+            self._processed_urls_cache.add(u)
         with self._lock:
-            self._conn.execute(
-                "INSERT OR IGNORE INTO processed_urls (url) VALUES (?)", (url,)
-            )
+            self._conn.execute("BEGIN TRANSACTION")
+            try:
+                self._conn.executemany("INSERT OR IGNORE INTO processed_urls (url) VALUES (?)", [(u,) for u in new_urls])
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
 
     def get_processed_count(self) -> int:
         """Количество обработанных URL (для логов)."""
@@ -124,5 +171,6 @@ class SqliteContactRepository:
 
     def clear_processed_urls(self) -> None:
         """Очистить таблицу обработанных URL (при отмене / новом запуске)."""
+        self._processed_urls_cache.clear()
         with self._lock:
             self._conn.execute("DELETE FROM processed_urls")

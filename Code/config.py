@@ -48,8 +48,13 @@ LOCAL_SCAN_DIR: Path = OUTPUT_DIR / "Additional_files-for-check"
 # ---------------------------------------------------------------------------
 FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 REQUEST_TIMEOUT: int = int(os.environ.get("REQUEST_TIMEOUT", "10"))
-MAX_MB: int = int(os.environ.get("MAX_MB", "5"))         # Макс. размер одного HTTP-ответа (МБ)
-MAX_CONCURRENT: int = int(os.environ.get("MAX_CONCURRENT", "20"))  # Параллельных воркеров (было 100)
+MAX_MB: int = int(os.environ.get("MAX_MB", "50"))         # Макс. размер файла для потокового парсинга
+MAX_CONCURRENT: int = int(os.environ.get("MAX_CONCURRENT", "100"))  # Вернули 100 благодаря потоковой обработке
+
+# ---------------------------------------------------------------------------
+# MX Записи
+# ---------------------------------------------------------------------------
+MX_CACHE_LIMIT: int = int(os.environ.get("MX_CACHE_LIMIT", "50000"))
 
 # ---------------------------------------------------------------------------
 # GitHub

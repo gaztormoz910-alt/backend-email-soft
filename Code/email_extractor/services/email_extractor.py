@@ -7,6 +7,7 @@ services/email_extractor.py
 """
 from __future__ import annotations
 
+from typing import AsyncGenerator
 import csv
 import io
 import re
@@ -197,3 +198,70 @@ class EmailExtractorService(IEmailExtractorService):
             return _parse_csv_auto(text)
 
         return _parse_generic(text)
+
+    async def extract_from_stream(self, stream: AsyncGenerator[str, None], url: str) -> list[Contact]:
+        """Оптимизированный построчный поиск с минимальным расходом ОЗУ."""
+        low = url.lower()
+        is_csv = low.endswith(".csv") or "export=true" in low or "format=csv" in low
+        seen: dict[str, Contact] = {}
+
+        if is_csv:
+            headers = []
+            ec, fc, lc = None, None, None
+            row_num = 0
+
+            async for line in stream:
+                try:
+                    # Быстрый парсер одной строки. Если строка обрезана кавычкой, мы просто попробуем вытащить email регуляркой ниже
+                    row = next(csv.reader([line]))
+                except Exception:
+                    # Фолбэк на регулярку если csv.reader упал
+                    for email in EMAIL_RE.findall(line):
+                        e = email.lower()
+                        if not is_fake_email(e) and e not in seen:
+                            seen[e] = Contact.from_email_only(e)
+                    continue
+
+                if not any(row):
+                    continue
+
+                if row_num == 0:
+                    headers = [h.lower().strip() for h in row]
+                    def col_index(keywords: list[str]) -> int | None:
+                        for kw in keywords:
+                            for i, h in enumerate(headers):
+                                if kw in h: return i
+                        return None
+                    ec = col_index(["email", "e-mail", "mail"])
+                    fc = col_index(["first", "fname"])
+                    lc = col_index(["last", "lname"])
+                    row_num += 1
+                    continue
+
+                if ec is None:
+                    # Ищем во всех колонках
+                    for cell in row:
+                        m = EMAIL_RE.search(cell)
+                        if m:
+                            e = m.group(0).lower()
+                            if not is_fake_email(e) and e not in seen:
+                                seen[e] = Contact.from_email_only(e)
+                else:
+                    if ec < len(row):
+                        m = EMAIL_RE.search(row[ec])
+                        if m:
+                            e = m.group(0).lower()
+                            if not is_fake_email(e) and e not in seen:
+                                first = row[fc].strip() if fc is not None and fc < len(row) else ""
+                                last = row[lc].strip() if lc is not None and lc < len(row) else ""
+                                seen[e] = Contact.from_tuple(first, last, e)
+                row_num += 1
+        else:
+            # Обычный потоковый поиск через regex (HTML, TXT, JSON)
+            async for line in stream:
+                for email in EMAIL_RE.findall(line):
+                    e = email.lower()
+                    if not is_fake_email(e) and e not in seen:
+                        seen[e] = Contact.from_email_only(e)
+
+        return list(seen.values())

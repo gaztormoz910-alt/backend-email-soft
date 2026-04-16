@@ -13,10 +13,9 @@ from collections import OrderedDict
 import dns.resolver
 
 from ..core.interfaces import IMxChecker
+from config import MX_CACHE_LIMIT
 
 log = logging.getLogger(__name__)
-
-_MX_CACHE_LIMIT = 5_000  # максимум уникальных доменов в кэше
 
 
 class MxChecker(IMxChecker):
@@ -57,7 +56,7 @@ class MxChecker(IMxChecker):
             result = await self._resolve(domain)
 
             # Вытеснение самого старого элемента при переполнении
-            if len(self._cache) >= _MX_CACHE_LIMIT:
+            if len(self._cache) >= MX_CACHE_LIMIT:
                 self._cache.popitem(last=False)
 
             self._cache[domain] = result

@@ -153,9 +153,11 @@ async def _process_url(
     extractor: EmailExtractorService,
     mx: MxChecker,
     repo: SqliteContactRepository,
+    db_contact_queue: asyncio.Queue,
+    db_url_queue: asyncio.Queue,
     pbar=None,
 ) -> int:
-    """Скачать URL, извлечь контакты, проверить MX, добавить в БД."""
+    """Скачать URL потоково, извлечь контакты, добавить в очередь записи БД."""
     async with sem:
         if _STOP_REQUESTED or _CANCEL_REQUESTED:
             return 0
@@ -163,31 +165,27 @@ async def _process_url(
         if repo.is_url_processed(url):
             return 0
 
-        raw = await http.fetch(url)
-        # Сразу помечаем как обработанный — даже если контента нет
-        repo.mark_url_processed(url)
+        # Мгновенная пометка в ОЗУ для других воркеров
+        repo._processed_urls_cache.add(url)
+        db_url_queue.put_nowait(url)
 
-        if not raw:
-            return 0
-
-        found = extractor.extract_from_url_content(raw, url)
-        raw = None  # освобождаем буфер ответа немедленно
+        stream = http.stream_lines(url)
+        found = await extractor.extract_from_stream(stream, url)
+        
         added = 0
-
         for contact in found:
             e = contact.email
             if not e or is_fake_email(e):
                 continue
             if not await mx.check(contact.domain):
                 continue
-            if repo.add_if_not_exists(contact):
-                added += 1
+            db_contact_queue.put_nowait(contact)
+            added += 1
 
         if added:
             msg = f"   🎯 +{added} адресов: {url[:70]}"
             log.info(msg)
             asyncio.create_task(ws_manager.send_log(msg))
-            asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
         if pbar:
             pbar.update(1)
@@ -253,6 +251,8 @@ async def _main_logic() -> None:
     # ------------------------------------------------------------------
     async def _worker(
         queue: asyncio.Queue,
+        db_contact_queue: asyncio.Queue,
+        db_url_queue: asyncio.Queue,
         http: AsyncHttpClient,
         sem: asyncio.Semaphore,
         extractor: EmailExtractorService,
@@ -264,7 +264,7 @@ async def _main_logic() -> None:
             url = await queue.get()
             try:
                 if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                    await _process_url(http, url, sem, extractor, mx, repo, pbar)
+                    await _process_url(http, url, sem, extractor, mx, repo, db_contact_queue, db_url_queue, pbar)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -299,6 +299,42 @@ async def _main_logic() -> None:
     else:
         # Восстанавливаем счетчик, так как clear_history сбросил его в 0 перед стартом
         ws_manager.email_count = repo.get_count()
+
+    # ------------------------------------------------------------------
+    # Batch Writer (для SQLite)
+    # ------------------------------------------------------------------
+    db_contact_queue: asyncio.Queue = asyncio.Queue()
+    db_url_queue: asyncio.Queue = asyncio.Queue()
+
+    async def _db_writer() -> None:
+        while True:
+            try:
+                if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                    break
+                contacts_to_add = []
+                urls_to_mark = []
+                while not db_url_queue.empty():
+                    urls_to_mark.append(db_url_queue.get_nowait())
+                    db_url_queue.task_done()
+                while not db_contact_queue.empty():
+                    contacts_to_add.append(db_contact_queue.get_nowait())
+                    db_contact_queue.task_done()
+
+                if urls_to_mark:
+                    repo.mark_urls_processed_bulk(urls_to_mark)
+                if contacts_to_add:
+                    added = repo.add_contacts_bulk(contacts_to_add)
+                    if added > 0:
+                        asyncio.create_task(ws_manager.send_count(repo.get_count()))
+
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"DB Writer error: {e}")
+                await asyncio.sleep(1)
+
+    db_writer_task = asyncio.create_task(_db_writer())
 
     mx = MxChecker()
     extractor = EmailExtractorService()
@@ -357,7 +393,7 @@ async def _main_logic() -> None:
                 w.cancel()
             workers = [
                 asyncio.create_task(
-                    _worker(url_queue, http, sem, extractor, mx, repo, pbar)
+                    _worker(url_queue, db_contact_queue, db_url_queue, http, sem, extractor, mx, repo, pbar)
                 )
                 for _ in range(MAX_CONCURRENT)
             ]
@@ -435,19 +471,29 @@ async def _main_logic() -> None:
             if _STOP_REQUESTED or _CANCEL_REQUESTED:
                 break
             if await mx.check(contact.domain):
-                if repo.add_if_not_exists(contact):
-                    added_gh += 1
+                db_contact_queue.put_nowait(contact)
+                added_gh += 1
 
         if added_gh > 0:
-            asyncio.create_task(ws_manager.send_count(repo.get_count()))
-
-        msg_gh = f"✅ GitHub добавил {added_gh} адресов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-        log.info(msg_gh)
+            msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
+            log.info(msg_gh)
         asyncio.create_task(ws_manager.send_log(msg_gh))
 
     # ------------------------------------------------------------------
     # Завершение
     # ------------------------------------------------------------------
+    db_writer_task.cancel()
+    # Финальный сброс очередей в базу
+    contacts_to_add = []
+    urls_to_mark = []
+    while not db_url_queue.empty():
+        urls_to_mark.append(db_url_queue.get_nowait())
+    while not db_contact_queue.empty():
+        contacts_to_add.append(db_contact_queue.get_nowait())
+    if urls_to_mark:
+        repo.mark_urls_processed_bulk(urls_to_mark)
+    if contacts_to_add:
+        repo.add_contacts_bulk(contacts_to_add)
     if _CANCEL_REQUESTED:
         ws_manager.clear_history()
         ws_manager.email_count = 0

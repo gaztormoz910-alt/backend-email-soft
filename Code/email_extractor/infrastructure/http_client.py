@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import gzip
 import logging
+from typing import AsyncGenerator
 
 import httpx
 from fake_useragent import UserAgent
@@ -95,6 +96,27 @@ class AsyncHttpClient(IHttpClient):
         except Exception as exc:
             log.debug("✗ fetch(%s): %s", url[:80], exc)
             return None
+
+    async def stream_lines(self, url: str) -> AsyncGenerator[str, None]:
+        """
+        Скачивает ответ потоково и выдает по одной строке (для O(1) памяти).
+        Останавливает чтение, если превышен self._max_bytes.
+        """
+        try:
+            headers = {"User-Agent": _ua.random}
+            async with self._client.stream("GET", url, headers=headers) as r:
+                if r.status_code != 200:
+                    return
+                bytes_read = 0
+                async for line in r.aiter_lines():
+                    # Приблизительная оценка прочитанных байт
+                    bytes_read += len(line.encode('utf-8', errors='ignore'))
+                    if bytes_read > self._max_bytes:
+                        log.debug("⚠ Прервано потоковое чтение %s: превышен %d МБ", url, self._max_bytes // (1024 * 1024))
+                        break
+                    yield line
+        except Exception as exc:
+            log.debug("✗ stream_lines(%s): %s", url[:80], exc)
 
     # ------------------------------------------------------------------
     # Context manager support
