@@ -24,6 +24,7 @@ cli/main.py — Точка входа EMAIL EXTRACTOR v12.1 (Memory-Optimized)
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 import sys
 from datetime import datetime
@@ -99,6 +100,7 @@ from config import (  # noqa: E402
     LOG_LEVEL,
     MAX_CONCURRENT,
     MAX_MB,
+    MEMORY_LIMIT_MB,
     PIPERMAIL_SERVERS,
     REQUEST_TIMEOUT,
     TXT_OUTPUT,
@@ -142,6 +144,26 @@ def _touch_checkpoint() -> None:
         log.warning("⚠ Не удалось создать checkpoint-маркер: %s", exc)
 
 
+def _get_memory_mb() -> float:
+    """Получить текущее потребление RAM процессом (MB). Кроссплатформенно."""
+    try:
+        import resource
+        # Linux/Mac: ru_maxrss в KB
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        return usage.ru_maxrss / 1024  # KB -> MB
+    except ImportError:
+        pass
+    try:
+        # Fallback: читаем /proc/self/status (Linux / Railway)
+        with open("/proc/self/status", "r") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024  # KB -> MB
+    except Exception:
+        pass
+    return 0.0
+
+
 # ---------------------------------------------------------------------------
 # Обработка одного URL
 # ---------------------------------------------------------------------------
@@ -165,8 +187,8 @@ async def _process_url(
         if repo.is_url_processed(url):
             return 0
 
-        # Мгновенная пометка в ОЗУ для других воркеров
-        repo._processed_urls_cache.add(url)
+        # Мгновенная пометка в LRU-кэше для других воркеров
+        repo._cache_add(url)
         db_url_queue.put_nowait(url)
 
         stream = http.stream_lines(url)
@@ -307,6 +329,7 @@ async def _main_logic() -> None:
     db_url_queue: asyncio.Queue = asyncio.Queue()
 
     async def _db_writer() -> None:
+        gc_counter = 0
         while True:
             try:
                 if _STOP_REQUESTED or _CANCEL_REQUESTED:
@@ -326,6 +349,21 @@ async def _main_logic() -> None:
                     added = repo.add_contacts_bulk(contacts_to_add)
                     if added > 0:
                         asyncio.create_task(ws_manager.send_count(repo.get_count()))
+
+                # Периодический GC + мониторинг памяти (каждые ~12 сек)
+                gc_counter += 1
+                if gc_counter >= 60:  # 60 * 0.2s = 12 сек
+                    gc_counter = 0
+                    gc.collect()
+                    mem_mb = _get_memory_mb()
+                    if mem_mb > 0:
+                        if mem_mb > MEMORY_LIMIT_MB:
+                            msg = f"⚠️ ПАМЯТЬ: {mem_mb:.0f}MB > {MEMORY_LIMIT_MB}MB — торможу на 10с + GC..."
+                            log.warning(msg)
+                            asyncio.create_task(ws_manager.send_log(msg))
+                            gc.collect()
+                            await asyncio.sleep(10)
+                            gc.collect()
 
                 await asyncio.sleep(0.2)
             except asyncio.CancelledError:
@@ -384,7 +422,7 @@ async def _main_logic() -> None:
         # --------------------------------------------------------------
         # Пул воркеров (повторно используется для всех сетевых фаз)
         # --------------------------------------------------------------
-        url_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=500)
+        url_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
         workers = []
 
         def _spawn_workers(pbar=None):

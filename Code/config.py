@@ -49,12 +49,22 @@ LOCAL_SCAN_DIR: Path = OUTPUT_DIR / "Additional_files-for-check"
 FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 REQUEST_TIMEOUT: int = int(os.environ.get("REQUEST_TIMEOUT", "10"))
 MAX_MB: int = int(os.environ.get("MAX_MB", "50"))         # Макс. размер файла для потокового парсинга
-MAX_CONCURRENT: int = int(os.environ.get("MAX_CONCURRENT", "150"))
+MAX_CONCURRENT: int = int(os.environ.get("MAX_CONCURRENT", "30"))
 
 # ---------------------------------------------------------------------------
 # MX Записи
 # ---------------------------------------------------------------------------
-MX_CACHE_LIMIT: int = int(os.environ.get("MX_CACHE_LIMIT", "50000"))
+MX_CACHE_LIMIT: int = int(os.environ.get("MX_CACHE_LIMIT", "10000"))
+
+# ---------------------------------------------------------------------------
+# Кэш обработанных URL (LRU — ограниченный размер в RAM)
+# ---------------------------------------------------------------------------
+PROCESSED_URL_CACHE_LIMIT: int = int(os.environ.get("PROCESSED_URL_CACHE_LIMIT", "20000"))
+
+# ---------------------------------------------------------------------------
+# Мониторинг памяти (MB) — при превышении воркеры замедляются + GC
+# ---------------------------------------------------------------------------
+MEMORY_LIMIT_MB: int = int(os.environ.get("MEMORY_LIMIT_MB", "400"))
 
 # ---------------------------------------------------------------------------
 # GitHub

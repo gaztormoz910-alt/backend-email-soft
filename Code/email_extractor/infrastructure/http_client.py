@@ -48,8 +48,8 @@ class AsyncHttpClient(IHttpClient):
         self,
         timeout: int = 10,
         max_mb: int = 20,
-        max_connections: int = 200,
-        max_keepalive: int = 50,
+        max_connections: int = 60,
+        max_keepalive: int = 20,
     ) -> None:
         self._timeout = timeout
         self._max_bytes = max_mb * 1024 * 1024
@@ -62,7 +62,7 @@ class AsyncHttpClient(IHttpClient):
             limits=limits,
             follow_redirects=True,
             verify=False,
-            http2=True,
+            http2=False,  # HTTP/2 hpack таблицы и буферы жрут RAM
         )
 
     # ------------------------------------------------------------------

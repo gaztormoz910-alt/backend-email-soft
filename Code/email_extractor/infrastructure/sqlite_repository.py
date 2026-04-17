@@ -1,10 +1,12 @@
 import sqlite3
 import threading
 from typing import Generator
+from collections import OrderedDict
 from pathlib import Path
 import logging
 
 from ..core.entities import Contact
+from config import PROCESSED_URL_CACHE_LIMIT
 
 log = logging.getLogger(__name__)
 
@@ -19,15 +21,21 @@ class SqliteContactRepository:
         self._lock = threading.Lock()
         self._init_db()
         
-        self._processed_urls_cache = set()
+        # LRU-кэш вместо безлимитного set: максимум PROCESSED_URL_CACHE_LIMIT записей
+        self._processed_urls_cache: OrderedDict[str, None] = OrderedDict()
+        self._cache_limit = PROCESSED_URL_CACHE_LIMIT
         self._load_processed_cache()
 
     def _load_processed_cache(self) -> None:
-        """Предзагрузка всех обработанных URL в память для мгновенных проверок (O(1))"""
+        """Предзагрузка ПОСЛЕДНИХ N обработанных URL (LRU, не все подряд)."""
         with self._lock:
-            cursor = self._conn.execute("SELECT url FROM processed_urls")
+            # Загружаем только последние _cache_limit URL для экономии RAM
+            cursor = self._conn.execute(
+                "SELECT url FROM processed_urls ORDER BY rowid DESC LIMIT ?",
+                (self._cache_limit,)
+            )
             for row in cursor:
-                self._processed_urls_cache.add(row[0])
+                self._processed_urls_cache[row[0]] = None
 
     def _init_db(self) -> None:
         with self._lock:
@@ -52,6 +60,16 @@ class SqliteContactRepository:
                     url TEXT PRIMARY KEY
                 )
             """)
+
+    def _cache_add(self, url: str) -> None:
+        """Добавить URL в LRU-кэш с вытеснением старых записей."""
+        if url in self._processed_urls_cache:
+            self._processed_urls_cache.move_to_end(url)
+            return
+        self._processed_urls_cache[url] = None
+        # Вытеснить самый старый если превышен лимит
+        while len(self._processed_urls_cache) > self._cache_limit:
+            self._processed_urls_cache.popitem(last=False)
 
     # ------------------------------------------------------------------
     # Contacts
@@ -131,17 +149,30 @@ class SqliteContactRepository:
                     yield f"{row[0]}\n"
 
     # ------------------------------------------------------------------
-    # Processed URLs checkpoint (хранится на диске, а не в RAM)
+    # Processed URLs checkpoint (LRU-кэш + SQLite fallback)
     # ------------------------------------------------------------------
 
     def is_url_processed(self, url: str) -> bool:
-        """Проверить, был ли URL уже обработан. Мгновенно из ОЗУ O(1)."""
-        return url in self._processed_urls_cache
+        """Проверить, был ли URL уже обработан. Сначала LRU-кэш O(1), потом SQLite fallback."""
+        # Быстрая проверка в RAM (O(1))
+        if url in self._processed_urls_cache:
+            self._processed_urls_cache.move_to_end(url)  # обновить позицию LRU
+            return True
+        # Fallback: проверка в SQLite (медленно, но редко — только при cache-miss)
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT 1 FROM processed_urls WHERE url = ? LIMIT 1", (url,)
+            )
+            found = cursor.fetchone() is not None
+        if found:
+            # Добавить обратно в кэш для будущих быстрых проверок
+            self._cache_add(url)
+        return found
 
     def mark_url_processed(self, url: str) -> None:
         """Пометить URL как обработанный. (Синхронно: в кэш + в БД)"""
         if url not in self._processed_urls_cache:
-            self._processed_urls_cache.add(url)
+            self._cache_add(url)
             with self._lock:
                 self._conn.execute(
                     "INSERT OR IGNORE INTO processed_urls (url) VALUES (?)", (url,)
@@ -153,7 +184,7 @@ class SqliteContactRepository:
         if not new_urls:
             return
         for u in new_urls:
-            self._processed_urls_cache.add(u)
+            self._cache_add(u)
         with self._lock:
             self._conn.execute("BEGIN TRANSACTION")
             try:

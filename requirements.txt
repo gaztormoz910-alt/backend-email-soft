@@ -3,7 +3,7 @@ fastapi[standard]>=0.115.0
 uvicorn>=0.30.6
 
 # HTTP и парсинг
-httpx[http2]>=0.27.0
+httpx>=0.27.0
 beautifulsoup4>=4.12.3
 fake-useragent>=1.5.1
 

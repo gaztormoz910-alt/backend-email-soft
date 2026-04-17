@@ -60,18 +60,25 @@ class GitHubScanner(IGitHubScanner):
 
         contacts: list[Contact] = []
 
-        for query in _REPO_QUERIES:
-            for page in range(1, self._pages + 1):
-                repos = await self._search_repos(client, query, page)
-                if not repos:
-                    break
+        # Один httpx-клиент на всё время сканирования (вместо нового на каждый запрос)
+        import httpx
+        async with httpx.AsyncClient(
+            headers=self._headers,
+            timeout=15,
+            follow_redirects=True,
+        ) as hx:
+            for query in _REPO_QUERIES:
+                for page in range(1, self._pages + 1):
+                    repos = await self._search_repos(hx, query, page)
+                    if not repos:
+                        break
 
-                tasks = [self._scan_repo(client, repo) for repo in repos]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                    tasks = [self._scan_repo(hx, repo) for repo in repos]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                for result in results:
-                    if isinstance(result, list):
-                        contacts.extend(result)
+                    for result in results:
+                        if isinstance(result, list):
+                            contacts.extend(result)
 
         # Дедупликация по email
         seen: dict[str, Contact] = {}
@@ -93,36 +100,26 @@ class GitHubScanner(IGitHubScanner):
             "Accept": "application/vnd.github.v3+json",
         }
 
-    async def _api_get(self, client: IHttpClient, url: str, params: dict | None = None) -> dict | list | None:
-        """Выполнить GET к GitHub API; вернуть распарсенный JSON или None."""
+    async def _api_get(self, hx, url: str, params: dict | None = None) -> dict | list | None:
+        """Выполнить GET к GitHub API через переданный httpx-клиент."""
         import urllib.parse
 
         full_url = url
         if params:
             full_url = f"{url}?{urllib.parse.urlencode(params)}"
 
-        # Нам нужен raw fetch с заголовками — используем httpx напрямую через client
-        # Но IHttpClient не поддерживает кастомные заголовки.
-        # Поэтому делаем запрос через httpx напрямую (GitHub требует Authorization).
         try:
-            import httpx
-
-            async with httpx.AsyncClient(
-                headers=self._headers,
-                timeout=15,
-                follow_redirects=True,
-            ) as hx:
-                r = await hx.get(full_url)
-                if r.status_code != 200:
-                    return None
-                return r.json()
+            r = await hx.get(full_url)
+            if r.status_code != 200:
+                return None
+            return r.json()
         except Exception as exc:
             log.debug("GitHub API error (%s): %s", url, exc)
             return None
 
-    async def _search_repos(self, client: IHttpClient, query: str, page: int) -> list[dict]:
+    async def _search_repos(self, hx, query: str, page: int) -> list[dict]:
         data = await self._api_get(
-            client,
+            hx,
             "https://api.github.com/search/repositories",
             {"q": query, "per_page": self._per_page, "page": page},
         )
@@ -130,10 +127,10 @@ class GitHubScanner(IGitHubScanner):
             return data.get("items", [])
         return []
 
-    async def _scan_repo(self, client: IHttpClient, repo: dict) -> list[Contact]:
+    async def _scan_repo(self, hx, repo: dict) -> list[Contact]:
         commits_url = repo.get("commits_url", "").replace("{/sha}", "")
         data = await self._api_get(
-            client,
+            hx,
             commits_url,
             {"per_page": self._per_page},
         )

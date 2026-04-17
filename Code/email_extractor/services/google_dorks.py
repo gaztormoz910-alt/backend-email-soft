@@ -127,6 +127,9 @@ class GoogleDorksDiscovery(ISearchDiscovery):
                         seen.add(href)
                         urls.append(href)
 
+                soup.decompose()  # явно освобождаем дерево BS4
+                del soup, raw
+
                 await asyncio.sleep(random.uniform(1, 2))
             except Exception as exc:
                 log.debug("Bing search error: %s", exc)
