@@ -204,8 +204,8 @@ async def _process_url(
             db_contact_queue.put_nowait(contact)
             added += 1
 
-        if added:
-            msg = f"   🎯 +{added} адресов: {url[:70]}"
+        if added > 0 or len(found) > 0:
+            msg = f"   🔎 На странице найдено: {len(found)} | Прошли фильтр: {added} -> {url[:70]}"
             log.info(msg)
             asyncio.create_task(ws_manager.send_log(msg))
 
@@ -349,6 +349,12 @@ async def _main_logic() -> None:
                     repo.mark_urls_processed_bulk(urls_to_mark)
                 if contacts_to_add:
                     added = repo.add_contacts_bulk(contacts_to_add)
+                    duplicates = len(contacts_to_add) - added
+                    if added > 0 or duplicates > 0:
+                        msg_db = f"   💾 БАЗА ДАННЫХ: Успешно сохранено НОВЫХ: {added} | Отброшено ДУБЛИКАТОВ: {duplicates}"
+                        log.info(msg_db)
+                        asyncio.create_task(ws_manager.send_log(msg_db))
+                    
                     if added > 0:
                         asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
