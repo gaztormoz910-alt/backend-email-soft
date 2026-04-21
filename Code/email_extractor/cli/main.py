@@ -205,7 +205,7 @@ async def _process_url(
             added += 1
 
         if added > 0 or len(found) > 0:
-            msg = f"   👀 Зашёл на сайт {url[:60]} -> Увидел {len(found)} почт. (Из них {len(found) - added} кривых/фейковых, {added} нормальных. Отправил в базу!)"
+            msg = f"   👀 Зашёл на сайт {url[:60]} -> Увидел {len(found)} почт. (Из них {len(found) - added} кривых/фейковых, {added} нормальных. Отправил на проверку уникальности!)"
             log.info(msg)
             asyncio.create_task(ws_manager.send_log(msg))
 
