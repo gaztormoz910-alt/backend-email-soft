@@ -26,8 +26,6 @@ _FAKE_PATTERNS: list[re.Pattern] = [
         r'^random_\d+@',
         r'^email\d+@email\.com$',
         r'^first\d+@',
-        r'^test\d*@',
-        r'^user\d*@',
         r'^sample\d*@',
         r'^noreply@',
         r'^no-reply@',

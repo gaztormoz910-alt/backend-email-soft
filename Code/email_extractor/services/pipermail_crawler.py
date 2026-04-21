@@ -57,7 +57,7 @@ class PipermailCrawler(IPipermailCrawler):
         Все серверы обходятся параллельно; URL передаются через asyncio.Queue.
         """
         log.info("🔎 Параллельный обход %d серверов Pipermail…", len(self._servers))
-        queue: asyncio.Queue[str] = asyncio.Queue()
+        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=1000)
         tasks = [
             asyncio.create_task(self._process_server(client, srv, queue))
             for srv in self._servers

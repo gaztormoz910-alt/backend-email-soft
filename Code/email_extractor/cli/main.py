@@ -11,7 +11,6 @@ cli/main.py — Точка входа EMAIL EXTRACTOR v12.1 (Memory-Optimized)
 Четыре фазы выполняются последовательно:
     0. Локальные файлы (LocalFileScanner)
     1. Pipermail-архивы (PipermailCrawler)
-    2. Google Dorks (GoogleDorksDiscovery)
     3. GitHub коммиты (GitHubScanner)
     4. COMB API (ProxyNova — бесплатная база утечек)
 
@@ -91,9 +90,6 @@ if str(_ROOT) not in sys.path:
 from config import (  # noqa: E402
     CHECKPOINT_FILE,
     CSV_OUTPUT,
-    DORK_SLEEP,
-    DORK_RESULTS_PER_QUERY,
-    EMAIL_DORKS,
     GITHUB_TOKEN,
     COMB_API_URL,
     COMB_DOMAINS,
@@ -115,7 +111,6 @@ from email_extractor.infrastructure.sqlite_repository import SqliteContactReposi
 from email_extractor.infrastructure.http_client import AsyncHttpClient
 from email_extractor.services.email_extractor import EmailExtractorService, is_fake_email
 from email_extractor.services.github_scanner import GitHubScanner
-from email_extractor.services.google_dorks import GoogleDorksDiscovery
 from email_extractor.services.local_file_scanner import LocalFileScanner
 from email_extractor.services.mx_checker import MxChecker
 from email_extractor.services.pipermail_crawler import PipermailCrawler
@@ -325,7 +320,9 @@ async def _main_logic() -> None:
         ws_manager.email_count = 0
     else:
         # Восстанавливаем счетчик, так как clear_history сбросил его в 0 перед стартом
-        ws_manager.email_count = repo.get_count()
+        count = repo.get_count()
+        ws_manager.email_count = count
+        asyncio.create_task(ws_manager.send_count(count))
 
     # ------------------------------------------------------------------
     # Batch Writer (для SQLite)
@@ -442,9 +439,37 @@ async def _main_logic() -> None:
             ]
 
         # --------------------------------------------------------------
-        # ФАЗА 1: Pipermail
+        # ФАЗА 1: COMB API (ProxyNova)
         # --------------------------------------------------------------
-        log.info("\n📧 ЭТАП 1: Архивы Pipermail")
+        if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+            log.info("\n🔓 ЭТАП 1: COMB API (ProxyNova — публичная база утечек)")
+            asyncio.create_task(ws_manager.send_log("🔓 ЭТАП 1: COMB API (публичная база утечек)..."))
+            phase_start = datetime.now()
+            
+            comb = CombApiScanner(
+                api_url=COMB_API_URL,
+                domains=COMB_DOMAINS,
+                sleep_between=COMB_SLEEP,
+            )
+            comb_contacts = await comb.scan(http)
+            added_comb = 0
+            
+            for contact in comb_contacts:
+                if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                    break
+                if await mx.check(contact.domain):
+                    db_contact_queue.put_nowait(contact)
+                    added_comb += 1
+                    
+            msg_comb = f"✅ COMB API: +{added_comb} адресов из {len(COMB_DOMAINS)} доменов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+            log.info(msg_comb)
+            asyncio.create_task(ws_manager.send_log(msg_comb))
+
+    
+# --------------------------------------------------------------
+        # ФАЗА 2: Pipermail
+        # --------------------------------------------------------------
+        log.info("\n📧 ЭТАП 2: Архивы Pipermail")
         phase_start = datetime.now()
         crawler = PipermailCrawler(servers=PIPERMAIL_SERVERS)
         pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
@@ -464,41 +489,6 @@ async def _main_logic() -> None:
         msg_piper = f"✅ Обработано {discovered_count} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
         log.info(msg_piper)
         asyncio.create_task(ws_manager.send_log(msg_piper))
-
-        # --------------------------------------------------------------
-        # ФАЗА 2: Google Dorks
-        # --------------------------------------------------------------
-        log.info("\n🔍 ЭТАП 2: Google Dorks")
-        phase_start = datetime.now()
-
-        discovery = GoogleDorksDiscovery(
-            dorks=EMAIL_DORKS,
-            results_per_query=DORK_RESULTS_PER_QUERY,
-            sleep_between=DORK_SLEEP,
-        )
-        # Передаём пустой set — фильтрация дублей теперь в SQLite
-        dork_urls = await discovery.discover(http, set())
-        dork_urls = [u for u in dork_urls if not repo.is_url_processed(u)]
-
-        pbar = async_tqdm(total=len(dork_urls), desc="Обработка Dorks", unit="URL", position=0)
-        _spawn_workers(pbar)
-
-        for url in dork_urls:
-            if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                break
-            await url_queue.put(url)
-
-        await url_queue.join()
-        pbar.close()
-
-        msg_dork = f"✅ Обработано {len(dork_urls)} URL из Dorks. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-        log.info(msg_dork)
-        asyncio.create_task(ws_manager.send_log(msg_dork))
-
-        # Останавливаем воркеров
-        for w in workers:
-            w.cancel()
-        workers = []
 
         # --------------------------------------------------------------
         # ФАЗА 3: GitHub
@@ -522,34 +512,7 @@ async def _main_logic() -> None:
             log.info(msg_gh)
         asyncio.create_task(ws_manager.send_log(msg_gh))
 
-        # --------------------------------------------------------------
-        # ФАЗА 4: COMB API (ProxyNova)
-        # --------------------------------------------------------------
-        if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-            log.info("\n🔓 ЭТАП 4: COMB API (ProxyNova — публичная база утечек)")
-            asyncio.create_task(ws_manager.send_log("🔓 ЭТАП 4: COMB API (публичная база утечек)..."))
-            phase_start = datetime.now()
-            
-            comb = CombApiScanner(
-                api_url=COMB_API_URL,
-                domains=COMB_DOMAINS,
-                sleep_between=COMB_SLEEP,
-            )
-            comb_contacts = await comb.scan(http)
-            added_comb = 0
-            
-            for contact in comb_contacts:
-                if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                    break
-                if await mx.check(contact.domain):
-                    db_contact_queue.put_nowait(contact)
-                    added_comb += 1
-                    
-            msg_comb = f"✅ COMB API: +{added_comb} адресов из {len(COMB_DOMAINS)} доменов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-            log.info(msg_comb)
-            asyncio.create_task(ws_manager.send_log(msg_comb))
-
-    # ------------------------------------------------------------------
+        # ------------------------------------------------------------------
     # Завершение
     # ------------------------------------------------------------------
     db_writer_task.cancel()
