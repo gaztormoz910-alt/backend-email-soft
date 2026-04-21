@@ -50,7 +50,7 @@ _IGNORED_EMAILS: frozenset[str] = frozenset({
 
 _FAKE_DOMAINS: frozenset[str] = frozenset({
     "example.com", "test.com", "domain.com", "localhost.com",
-    "email.com", "mail.com", "placeholder.com",
+    "email.com", "placeholder.com", "mailinator.com",
 })
 
 

@@ -96,6 +96,19 @@ PIPERMAIL_SERVERS: list[str] = [
 ]
 
 # ---------------------------------------------------------------------------
+# COMB API (бесплатный, без ключа — ProxyNova)
+# ---------------------------------------------------------------------------
+COMB_API_URL: str = os.environ.get("COMB_API_URL", "https://api.proxynova.com/comb")
+COMB_SLEEP: float = float(os.environ.get("COMB_SLEEP", "3.0"))
+COMB_DOMAINS: list[str] = [
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+    "mail.ru", "yandex.ru", "protonmail.com", "aol.com",
+    "icloud.com", "zoho.com", "gmx.com", "fastmail.com",
+    "tutanota.com", "mail.com", "inbox.ru", "list.ru",
+    "bk.ru", "rambler.ru", "live.com", "msn.com",
+]
+
+# ---------------------------------------------------------------------------
 # Дорки
 # ---------------------------------------------------------------------------
 EMAIL_DORKS: list[str] = [
@@ -105,4 +118,9 @@ EMAIL_DORKS: list[str] = [
     'filetype:txt intext:"@" -intext:"example.com"',
     'inurl:"wp-content/uploads/mc4wp-debug.log"',
     'intext:"@gmail.com" filetype:csv OR filetype:txt',
+    # Paste-сайты (динамические источники)
+    'site:pastebin.com intext:"@gmail.com"',
+    'site:pastebin.com intext:"@yahoo.com" intext:"@"',
+    'site:pastebin.com "email" "password" filetype:txt',
+    'site:dpaste.org intext:"@" -intext:"example"',
 ]
