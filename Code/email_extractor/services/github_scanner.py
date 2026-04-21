@@ -20,7 +20,17 @@ log = logging.getLogger(__name__)
 _NOREPLY_SUFFIX = "@users.noreply.github.com"
 
 # Поисковые запросы для поиска репозиториев
-_REPO_QUERIES = ["stars:>1000", "email list"]
+_REPO_QUERIES = [
+    "stars:>1000",
+    "email list",
+    "language:javascript",
+    "language:python",
+    "language:java",
+    "language:go",
+    "language:c++",
+    "created:>2023-01-01",
+    "good-first-issue:>10"
+]
 
 
 class GitHubScanner(IGitHubScanner):
