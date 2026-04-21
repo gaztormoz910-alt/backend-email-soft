@@ -205,7 +205,7 @@ async def _process_url(
             added += 1
 
         if added > 0 or len(found) > 0:
-            msg = f"   🔎 На странице найдено: {len(found)} | Прошли фильтр: {added} -> {url[:70]}"
+            msg = f"   👀 Зашёл на сайт {url[:60]} -> Увидел {len(found)} почт. (Из них {len(found) - added} кривых/фейковых, {added} нормальных. Отправил в базу!)"
             log.info(msg)
             asyncio.create_task(ws_manager.send_log(msg))
 
@@ -351,7 +351,7 @@ async def _main_logic() -> None:
                     added = repo.add_contacts_bulk(contacts_to_add)
                     duplicates = len(contacts_to_add) - added
                     if added > 0 or duplicates > 0:
-                        msg_db = f"   💾 БАЗА ДАННЫХ: Успешно сохранено НОВЫХ: {added} | Отброшено ДУБЛИКАТОВ: {duplicates}"
+                        msg_db = f"   💾 ПРОВЕРКА БАЗОЙ: Прилетело {len(contacts_to_add)} почт. -> {duplicates} УЖЕ БЫЛИ (ВЫКИНУЛ В МУСОР) | {added} РЕАЛЬНО НОВЫЕ (ДОБАВИЛ)!"
                         log.info(msg_db)
                         asyncio.create_task(ws_manager.send_log(msg_db))
                     
