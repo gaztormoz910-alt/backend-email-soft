@@ -15,7 +15,15 @@ class BackgroundParserEngine:
         self.log_history = []
         self.email_count = 0
         self.auto_resume_task = None
+        
         self.job_start_time = None
+        try:
+            import os
+            if os.path.exists("data/start_time.txt"):
+                with open("data/start_time.txt", "r") as f:
+                    self.job_start_time = float(f.read().strip())
+        except Exception:
+            pass
 
     async def run_engine_loop(self):
         log.info("BackgroundParserEngine started, waiting for jobs...")
