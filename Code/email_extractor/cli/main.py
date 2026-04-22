@@ -213,6 +213,85 @@ async def _process_url(
             pbar.update(1)
         return added
 
+async def _worker(
+    queue: asyncio.Queue,
+    db_contact_queue: asyncio.Queue,
+    db_url_queue: asyncio.Queue,
+    http: AsyncHttpClient,
+    sem: asyncio.Semaphore,
+    extractor: EmailExtractorService,
+    mx: MxChecker,
+    repo: SqliteContactRepository,
+    pbar,
+) -> None:
+    """Воркер для параллельной обработки URL (без состояния в RAM)"""
+    while True:
+        url = await queue.get()
+        try:
+            if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                await _process_url(http, url, sem, extractor, mx, repo, db_contact_queue, db_url_queue, pbar)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            log.error(f"Worker failed on {url}: {e}")
+        finally:
+            queue.task_done()
+
+
+async def _db_writer(
+    db_contact_queue: asyncio.Queue,
+    db_url_queue: asyncio.Queue,
+    repo: SqliteContactRepository,
+) -> None:
+    """Batch Writer (для SQLite) - пишет данные пачками для оптимизации"""
+    gc_counter = 0
+    while True:
+        try:
+            if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                break
+            contacts_to_add = []
+            urls_to_mark = []
+            while not db_url_queue.empty():
+                urls_to_mark.append(db_url_queue.get_nowait())
+                db_url_queue.task_done()
+            while not db_contact_queue.empty():
+                contacts_to_add.append(db_contact_queue.get_nowait())
+                db_contact_queue.task_done()
+
+            if urls_to_mark:
+                repo.mark_urls_processed_bulk(urls_to_mark)
+            if contacts_to_add:
+                added = repo.add_contacts_bulk(contacts_to_add)
+                duplicates = len(contacts_to_add) - added
+                if added > 0:
+                    msg_db = f"   💾 ПРОВЕРКА БАЗОЙ: Прилетело {len(contacts_to_add)} почт. -> {duplicates} УЖЕ БЫЛИ (ВЫКИНУЛ В МУСОР) | {added} РЕАЛЬНО НОВЫЕ (ДОБАВИЛ)!"
+                    log.info(msg_db)
+                    asyncio.create_task(ws_manager.send_log(msg_db))
+                
+                if added > 0:
+                    asyncio.create_task(ws_manager.send_count(repo.get_count()))
+
+            # Периодический GC + мониторинг памяти (каждые ~12 сек)
+            gc_counter += 1
+            if gc_counter >= 60:  # 60 * 0.2s = 12 сек
+                gc_counter = 0
+                gc.collect()
+                mem_mb = _get_memory_mb()
+                if mem_mb > 0:
+                    if mem_mb > MEMORY_LIMIT_MB:
+                        msg = f"⚠️ ПАМЯТЬ: {mem_mb:.0f}MB > {MEMORY_LIMIT_MB}MB — торможу на 10с + GC..."
+                        log.warning(msg)
+                        asyncio.create_task(ws_manager.send_log(msg))
+                        gc.collect()
+                        await asyncio.sleep(10)
+                        gc.collect()
+
+            await asyncio.sleep(0.2)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            log.error(f"DB Writer error: {e}")
+            await asyncio.sleep(1)
 
 # ---------------------------------------------------------------------------
 # MAIN
@@ -269,30 +348,8 @@ async def _main_logic() -> None:
     )
 
     # ------------------------------------------------------------------
-    # Worker для параллельной обработки URL (без состояния в RAM)
+    # Worker function extracted to module scope for better decomposition
     # ------------------------------------------------------------------
-    async def _worker(
-        queue: asyncio.Queue,
-        db_contact_queue: asyncio.Queue,
-        db_url_queue: asyncio.Queue,
-        http: AsyncHttpClient,
-        sem: asyncio.Semaphore,
-        extractor: EmailExtractorService,
-        mx: MxChecker,
-        repo: SqliteContactRepository,
-        pbar,
-    ) -> None:
-        while True:
-            url = await queue.get()
-            try:
-                if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                    await _process_url(http, url, sem, extractor, mx, repo, db_contact_queue, db_url_queue, pbar)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                log.error(f"Worker failed on {url}: {e}")
-            finally:
-                queue.task_done()
 
     _START_TIME = datetime.now().timestamp()
     start_time = datetime.now()
@@ -330,57 +387,7 @@ async def _main_logic() -> None:
     db_contact_queue: asyncio.Queue = asyncio.Queue()
     db_url_queue: asyncio.Queue = asyncio.Queue()
 
-    async def _db_writer() -> None:
-        gc_counter = 0
-        while True:
-            try:
-                if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                    break
-                contacts_to_add = []
-                urls_to_mark = []
-                while not db_url_queue.empty():
-                    urls_to_mark.append(db_url_queue.get_nowait())
-                    db_url_queue.task_done()
-                while not db_contact_queue.empty():
-                    contacts_to_add.append(db_contact_queue.get_nowait())
-                    db_contact_queue.task_done()
-
-                if urls_to_mark:
-                    repo.mark_urls_processed_bulk(urls_to_mark)
-                if contacts_to_add:
-                    added = repo.add_contacts_bulk(contacts_to_add)
-                    duplicates = len(contacts_to_add) - added
-                    if added > 0:
-                        msg_db = f"   💾 ПРОВЕРКА БАЗОЙ: Прилетело {len(contacts_to_add)} почт. -> {duplicates} УЖЕ БЫЛИ (ВЫКИНУЛ В МУСОР) | {added} РЕАЛЬНО НОВЫЕ (ДОБАВИЛ)!"
-                        log.info(msg_db)
-                        asyncio.create_task(ws_manager.send_log(msg_db))
-                    
-                    if added > 0:
-                        asyncio.create_task(ws_manager.send_count(repo.get_count()))
-
-                # Периодический GC + мониторинг памяти (каждые ~12 сек)
-                gc_counter += 1
-                if gc_counter >= 60:  # 60 * 0.2s = 12 сек
-                    gc_counter = 0
-                    gc.collect()
-                    mem_mb = _get_memory_mb()
-                    if mem_mb > 0:
-                        if mem_mb > MEMORY_LIMIT_MB:
-                            msg = f"⚠️ ПАМЯТЬ: {mem_mb:.0f}MB > {MEMORY_LIMIT_MB}MB — торможу на 10с + GC..."
-                            log.warning(msg)
-                            asyncio.create_task(ws_manager.send_log(msg))
-                            gc.collect()
-                            await asyncio.sleep(10)
-                            gc.collect()
-
-                await asyncio.sleep(0.2)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                log.error(f"DB Writer error: {e}")
-                await asyncio.sleep(1)
-
-    db_writer_task = asyncio.create_task(_db_writer())
+    db_writer_task = asyncio.create_task(_db_writer(db_contact_queue, db_url_queue, repo))
 
     mx = MxChecker()
     extractor = EmailExtractorService()
