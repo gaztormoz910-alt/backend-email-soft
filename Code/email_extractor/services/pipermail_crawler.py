@@ -106,38 +106,45 @@ class PipermailCrawler(IPipermailCrawler):
         ]
         soup.decompose()  # явно освобождаем дерево BS4
 
-        for list_url in list_links:
-            list_raw = await client.fetch(list_url)
-            if not list_raw:
-                continue
+        sem = asyncio.Semaphore(10) # 10 parallel lists per server
 
-            list_soup = BeautifulSoup(_decode(list_raw), "html.parser")
-            list_raw = None  # освобождаем буфер
+        async def _process_list(list_url: str):
+            async with sem:
+                list_raw = await client.fetch(list_url)
+                if not list_raw:
+                    return
 
-            month_links = [
-                urllib.parse.urljoin(list_url, a["href"])
-                for a in list_soup.find_all("a", href=True)
-                if _MONTH_RE.match(a["href"])
-            ]
-            list_soup.decompose()  # явно освобождаем дерево BS4
+                list_soup = BeautifulSoup(_decode(list_raw), "html.parser")
+                list_raw = None  # освобождаем буфер
 
-            for month_url in month_links:
-                month_raw = await client.fetch(month_url)
-                if not month_raw:
-                    continue
-
-                await queue.put(month_url)
-
-                month_soup = BeautifulSoup(_decode(month_raw), "html.parser")
-                month_raw = None  # освобождаем буфер
-
-                file_urls = [
-                    urllib.parse.urljoin(month_url, a["href"])
-                    for a in month_soup.find_all("a", href=True)
-                    if a["href"].endswith((".html", ".htm"))
+                month_links = [
+                    urllib.parse.urljoin(list_url, a["href"])
+                    for a in list_soup.find_all("a", href=True)
+                    if _MONTH_RE.match(a["href"])
                 ]
-                month_soup.decompose()  # явно освобождаем дерево BS4
+                list_soup.decompose()  # явно освобождаем дерево BS4
 
-                for file_url in file_urls:
-                    await queue.put(file_url)
+                for month_url in month_links:
+                    month_raw = await client.fetch(month_url)
+                    if not month_raw:
+                        continue
+
+                    await queue.put(month_url)
+
+                    month_soup = BeautifulSoup(_decode(month_raw), "html.parser")
+                    month_raw = None  # освобождаем буфер
+
+                    file_urls = [
+                        urllib.parse.urljoin(month_url, a["href"])
+                        for a in month_soup.find_all("a", href=True)
+                        if a["href"].endswith((".html", ".htm"))
+                    ]
+                    month_soup.decompose()  # явно освобождаем дерево BS4
+
+                    for file_url in file_urls:
+                        await queue.put(file_url)
+
+        tasks = [asyncio.create_task(_process_list(url)) for url in list_links]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
