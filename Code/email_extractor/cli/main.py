@@ -445,31 +445,33 @@ async def _main_logic() -> None:
             ]
 
         # --------------------------------------------------------------
-        # ФАЗА 1: COMB API (ProxyNova)
+        # ФАЗА 1: COMB API (ProxyNova) - Запускаем в фоне!
         # --------------------------------------------------------------
+        comb_task = None
         if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-            log.info("\n🔓 ЭТАП 1: COMB API (ProxyNova — публичная база утечек)")
-            asyncio.create_task(ws_manager.send_log("🔓 ЭТАП 1: COMB API (публичная база утечек)..."))
-            phase_start = datetime.now()
+            log.info("\n🔓 ЭТАП 1: COMB API (ProxyNova — публичная база утечек) - Запуск в фоне")
+            asyncio.create_task(ws_manager.send_log("🔓 ЭТАП 1: COMB API запущен в фоновом режиме..."))
             
-            comb = CombApiScanner(
-                api_url=COMB_API_URL,
-                domains=COMB_DOMAINS,
-                sleep_between=COMB_SLEEP,
-            )
-            comb_contacts = await comb.scan(http)
-            added_comb = 0
-            
-            for contact in comb_contacts:
-                if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                    break
-                if await mx.check(contact.domain):
-                    db_contact_queue.put_nowait(contact)
-                    added_comb += 1
-                    
-            msg_comb = f"✅ COMB API: +{added_comb} адресов из {len(COMB_DOMAINS)} доменов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-            log.info(msg_comb)
-            asyncio.create_task(ws_manager.send_log(msg_comb))
+            async def _run_comb():
+                phase_start = datetime.now()
+                comb = CombApiScanner(
+                    api_url=COMB_API_URL,
+                    domains=COMB_DOMAINS,
+                    sleep_between=COMB_SLEEP,
+                )
+                comb_contacts = await comb.scan(http)
+                added_comb = 0
+                for contact in comb_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                        break
+                    if await mx.check(contact.domain):
+                        db_contact_queue.put_nowait(contact)
+                        added_comb += 1
+                msg_comb = f"✅ COMB API: +{added_comb} адресов из {len(COMB_DOMAINS)} доменов. Завершено за: {_format_time((datetime.now() - phase_start).total_seconds())}"
+                log.info(msg_comb)
+                asyncio.create_task(ws_manager.send_log(msg_comb))
+
+            comb_task = asyncio.create_task(_run_comb())
 
     
 # --------------------------------------------------------------
@@ -517,6 +519,10 @@ async def _main_logic() -> None:
             msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
             log.info(msg_gh)
         asyncio.create_task(ws_manager.send_log(msg_gh))
+
+        # Ждём завершения фонового COMB API
+        if comb_task:
+            await comb_task
 
         # ------------------------------------------------------------------
     # Завершение
