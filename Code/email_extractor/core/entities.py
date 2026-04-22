@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Contact:
     """
     Единственная доменная единица системы.
@@ -16,7 +16,6 @@ class Contact:
         first_name: Имя (может быть пустой строкой).
         last_name:  Фамилия (может быть пустой строкой).
     """
-    __slots__ = ('email', 'first_name', 'last_name')
     email: str
     first_name: str = field(default="")
     last_name: str = field(default="")
