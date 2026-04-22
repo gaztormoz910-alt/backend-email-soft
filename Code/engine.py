@@ -18,9 +18,10 @@ class BackgroundParserEngine:
         
         self.job_start_time = None
         try:
-            import os
-            if os.path.exists("data/start_time.txt"):
-                with open("data/start_time.txt", "r") as f:
+            from config import OUTPUT_DIR
+            start_time_file = OUTPUT_DIR / "start_time.txt"
+            if start_time_file.exists():
+                with open(start_time_file, "r") as f:
                     self.job_start_time = float(f.read().strip())
         except Exception:
             pass
@@ -68,8 +69,10 @@ class BackgroundParserEngine:
         if self.job_start_time is None:
             self.job_start_time = time.time()
             try:
-                Path("data").mkdir(exist_ok=True)
-                with open("data/start_time.txt", "w") as f:
+                from config import OUTPUT_DIR
+                start_time_file = OUTPUT_DIR / "start_time.txt"
+                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                with open(start_time_file, "w") as f:
                     f.write(str(self.job_start_time))
             except Exception as e:
                 log.error(f"Failed to save start_time: {e}")
@@ -98,10 +101,11 @@ class BackgroundParserEngine:
             core_main._CANCEL_REQUESTED = True
             self.clear_history()
             self.job_start_time = None
-            import os
             try:
-                if os.path.exists("data/start_time.txt"):
-                    os.remove("data/start_time.txt")
+                from config import OUTPUT_DIR
+                start_time_file = OUTPUT_DIR / "start_time.txt"
+                if start_time_file.exists():
+                    start_time_file.unlink()
             except:
                 pass
 

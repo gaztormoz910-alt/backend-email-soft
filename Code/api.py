@@ -42,9 +42,9 @@ async def lifespan(app: FastAPI):
                 pass
 
     try:
-        import os
-        if os.path.exists("data/start_time.txt"):
-            with open("data/start_time.txt", "r") as f:
+        start_time_file = OUTPUT_DIR / "start_time.txt"
+        if start_time_file.exists():
+            with open(start_time_file, "r") as f:
                 parser_engine.job_start_time = float(f.read().strip())
     except Exception as e:
         log.error(f"Failed to load start_time: {e}")
