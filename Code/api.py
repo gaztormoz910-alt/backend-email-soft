@@ -63,6 +63,11 @@ async def lifespan(app: FastAPI):
                 
                 await asyncio.sleep(120)  # Ждём 2 минуты
                 
+                # Перепроверяем: если пользователь нажал стоп во время охлаждения — не запускаем
+                if parser_engine._user_stopped:
+                    parser_engine.is_running = False
+                    return
+                
                 msg_start = "[АВТОМАТИКА] Сервер охладился. Автоматически возобновляем парсинг!"
                 parser_engine.log_history.append(msg_start)
                 await parser_engine.broadcast({"type": "LOG", "message": msg_start})
@@ -196,6 +201,20 @@ async def download_txt():
         media_type="text/plain",
         headers={"Content-Disposition": "attachment; filename=extracted_emails.txt"}
     )
+
+@app.get("/download/info")
+async def download_info():
+    """Возвращает информацию о файле для прогресс-бара скачивания"""
+    repo = SqliteContactRepository(db_path=DB_OUTPUT)
+    count = repo.get_count()
+    # Оценка размера: ~25 байт на email для TXT, ~40 для CSV
+    avg_email_len = 25
+    avg_csv_line_len = 40
+    return {
+        "email_count": count,
+        "estimated_txt_bytes": count * avg_email_len,
+        "estimated_csv_bytes": count * avg_csv_line_len + 30,  # +header
+    }
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

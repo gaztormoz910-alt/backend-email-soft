@@ -122,11 +122,12 @@ class LocalFileScanner(ILocalFileScanner):
             text = "\n".join(
                 df.to_string(index=False, header=False) for df in df_dict.values()
             )
-            return [
-                Contact.from_email_only(e.lower())
-                for e in EMAIL_RE.findall(text)
-                if not is_fake_email(e.lower())
-            ]
+            seen: dict[str, Contact] = {}
+            for e in EMAIL_RE.findall(text):
+                el = e.lower().strip()
+                if not is_fake_email(el) and el not in seen:
+                    seen[el] = Contact.from_email_only(el)
+            return list(seen.values())
         except Exception as exc:
             log.debug("✗ Ошибка Excel %s: %s", filepath.name, exc)
             return []

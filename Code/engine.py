@@ -15,6 +15,7 @@ class BackgroundParserEngine:
         self.log_history = []
         self.email_count = 0
         self.auto_resume_task = None
+        self._user_stopped = False  # Флаг: пользователь явно нажал Стоп/Отмена
         
         self.job_start_time = None
         try:
@@ -31,6 +32,7 @@ class BackgroundParserEngine:
         while True:
             job = await self.queue.get()
             self.is_running = True
+            self._user_stopped = False  # Сбрасываем при старте нового задания
             log.info("Job received. Starting extraction execution.")
             
             import email_extractor.cli.main as core_main
@@ -40,20 +42,27 @@ class BackgroundParserEngine:
                 await core_main.main()
             except Exception as e:
                 log.error(f"Engine execution failure: {e}", exc_info=True)
-                # Имитируем авто-возобновление при внутренних крашах (чтобы кнопка не сбрасывалась на старт)
-                async def _internal_auto_resume():
-                    try:
-                        msg = "[АВТОМАТИКА] Ошибка внутри процесса. Даем серверу остыть 1 минуту перед авто-запуском..."
-                        self.log_history.append(msg)
-                        await self.broadcast({"type": "LOG", "message": msg})
-                        await asyncio.sleep(60)
-                        msg_start = "[АВТОМАТИКА] Возобновляем работу после внутренней ошибки..."
-                        self.log_history.append(msg_start)
-                        await self.broadcast({"type": "LOG", "message": msg_start})
-                        await self.add_job()
-                    except asyncio.CancelledError:
-                        pass
-                self.auto_resume_task = asyncio.create_task(_internal_auto_resume())
+                # Авто-возобновление ТОЛЬКО если пользователь НЕ нажимал стоп/отмену
+                if not self._user_stopped and not getattr(core_main, '_STOP_REQUESTED', False) and not getattr(core_main, '_CANCEL_REQUESTED', False):
+                    async def _internal_auto_resume():
+                        try:
+                            msg = "[АВТОМАТИКА] Ошибка внутри процесса. Даем серверу остыть 1 минуту перед авто-запуском..."
+                            self.log_history.append(msg)
+                            await self.broadcast({"type": "LOG", "message": msg})
+                            await asyncio.sleep(60)
+                            # Перепроверяем флаг перед реальным запуском
+                            if self._user_stopped:
+                                log.info("Auto-resume cancelled: user stopped during cooldown.")
+                                return
+                            msg_start = "[АВТОМАТИКА] Возобновляем работу после внутренней ошибки..."
+                            self.log_history.append(msg_start)
+                            await self.broadcast({"type": "LOG", "message": msg_start})
+                            await self.add_job()
+                        except asyncio.CancelledError:
+                            pass
+                    self.auto_resume_task = asyncio.create_task(_internal_auto_resume())
+                else:
+                    log.info("Skipping auto-resume: user explicitly stopped/cancelled.")
             finally:
                 if getattr(self, 'auto_resume_task', None) and not self.auto_resume_task.done():
                     pass # Автоматика запущена, не меняем is_running на False
@@ -66,6 +75,7 @@ class BackgroundParserEngine:
         """Add parsing job to queue"""
         import time
         from pathlib import Path
+        self._user_stopped = False  # Сброс при явном запуске нового задания
         if self.job_start_time is None:
             self.job_start_time = time.time()
             try:
@@ -80,6 +90,9 @@ class BackgroundParserEngine:
 
     def cancel_all_jobs(self, soft_stop=False):
         """Clear queue and propagate stop/cancel signal to active worker"""
+        # Ставим флаг ПЕРВЫМ ДЕЛОМ — блокирует авто-возобновление
+        self._user_stopped = True
+
         # Empty the queue first
         while not self.queue.empty():
             try:

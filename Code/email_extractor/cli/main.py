@@ -205,7 +205,7 @@ async def _process_url(
             added += 1
 
         if added > 0:
-            msg = f"   👀 Зашёл на сайт {url[:60]} -> Увидел {len(found)} почт. (Из них {len(found) - added} кривых/фейковых, {added} нормальных. Отправил на проверку уникальности!)"
+            msg = f"   🔎 Сканирую {url[:60]} — нашёл {len(found)} адресов, {len(found) - added} фейковых отсеял. Остаток ({added} шт.) отправил в базу на проверку дубликатов..."
             log.info(msg)
             asyncio.create_task(ws_manager.send_log(msg))
 
@@ -263,8 +263,9 @@ async def _db_writer(
             if contacts_to_add:
                 added = repo.add_contacts_bulk(contacts_to_add)
                 duplicates = len(contacts_to_add) - added
-                if added > 0:
-                    msg_db = f"   💾 ПРОВЕРКА БАЗОЙ: Прилетело {len(contacts_to_add)} почт. -> {duplicates} УЖЕ БЫЛИ (ВЫКИНУЛ В МУСОР) | {added} РЕАЛЬНО НОВЫЕ (ДОБАВИЛ)!"
+                if added > 0 or duplicates > 0:
+                    total = repo.get_count()
+                    msg_db = f"   ✅💾 ИТОГ ПРОВЕРКИ: Прилетело {len(contacts_to_add)} → {duplicates} ДУБЛИКАТОВ (выброшены) | +{added} НОВЫХ УНИКАЛЬНЫХ | Всего в базе: {total}"
                     log.info(msg_db)
                     asyncio.create_task(ws_manager.send_log(msg_db))
                 
@@ -491,10 +492,12 @@ async def _main_logic() -> None:
         _spawn_workers(pbar)
 
         discovered_count = 0
+        enqueued_urls: set[str] = set()  # Защита от дубликатов URL при параллельном краулинге
         async for url in crawler.discover(http):
             if _STOP_REQUESTED or _CANCEL_REQUESTED:
                 break
-            if not repo.is_url_processed(url):
+            if url not in enqueued_urls and not repo.is_url_processed(url):
+                enqueued_urls.add(url)
                 await url_queue.put(url)
                 discovered_count += 1
 
