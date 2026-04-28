@@ -94,6 +94,9 @@ from config import (  # noqa: E402
     COMB_API_URL,
     COMB_DOMAINS,
     COMB_SLEEP,
+    EMAIL_DORKS,
+    DORK_RESULTS_PER_QUERY,
+    DORK_SLEEP,
     LOCAL_SCAN_DIR,
     LOG_DATE_FORMAT,
     LOG_FORMAT,
@@ -115,6 +118,7 @@ from email_extractor.services.local_file_scanner import LocalFileScanner
 from email_extractor.services.mx_checker import MxChecker
 from email_extractor.services.pipermail_crawler import PipermailCrawler
 from email_extractor.services.comb_scanner import CombApiScanner
+from email_extractor.services.dork_scanner import DorkScanner
 from websocket_manager import ws_manager
 
 # ---------------------------------------------------------------------------
@@ -529,6 +533,39 @@ async def _main_logic() -> None:
             msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
             log.info(msg_gh)
         asyncio.create_task(ws_manager.send_log(msg_gh))
+
+        # --------------------------------------------------------------
+        # ФАЗА 4: Google Dorks
+        # --------------------------------------------------------------
+        if not (_STOP_REQUESTED or _CANCEL_REQUESTED) and EMAIL_DORKS:
+            log.info("\n🔍 ЭТАП 4: Google Dorks (%d запросов)", len(EMAIL_DORKS))
+            phase_start = datetime.now()
+            asyncio.create_task(ws_manager.send_log(f"🔍 ЭТАП 4: Google Dorks — {len(EMAIL_DORKS)} поисковых запросов..."))
+
+            dork_scanner = DorkScanner(
+                dorks=EMAIL_DORKS,
+                results_per_query=DORK_RESULTS_PER_QUERY,
+                sleep_between=DORK_SLEEP,
+            )
+
+            pbar_dork = async_tqdm(desc="Обработка Dork-URL", unit="стр", position=0, total=None)
+            _spawn_workers(pbar_dork)
+
+            dork_discovered = 0
+            async for url in dork_scanner.discover(http, known_urls=enqueued_urls):
+                if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                    break
+                if not repo.is_url_processed(url):
+                    enqueued_urls.add(url)
+                    await url_queue.put(url)
+                    dork_discovered += 1
+
+            await url_queue.join()
+            pbar_dork.close()
+
+            msg_dork = f"✅ Google Dorks: обработано {dork_discovered} URL. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+            log.info(msg_dork)
+            asyncio.create_task(ws_manager.send_log(msg_dork))
 
         # Ждём завершения фонового COMB API
         if comb_task:
