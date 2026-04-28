@@ -8,11 +8,13 @@ cli/main.py — Точка входа EMAIL EXTRACTOR v12.1 (Memory-Optimized)
     # или
     python Code/email_extractor/cli/main.py
 
-Четыре фазы выполняются последовательно:
+Пять фаз выполняются последовательно:
     0. Локальные файлы (LocalFileScanner)
-    1. Pipermail-архивы (PipermailCrawler)
+    1. COMB API (ProxyNova — фоновый запуск)
+    2. Pipermail-архивы Ubuntu (PipermailCrawler)
+    2.5 HyperKitty-архивы Fedora (HyperKittyCrawler)
     3. GitHub коммиты (GitHubScanner)
-    4. COMB API (ProxyNova — бесплатная база утечек)
+    4. Google Dorks (DorkScanner)
 
 Оптимизация памяти v12.1:
     - checkpoint["processed"] перенесён из RAM в SQLite (таблица processed_urls)
@@ -97,6 +99,7 @@ from config import (  # noqa: E402
     EMAIL_DORKS,
     DORK_RESULTS_PER_QUERY,
     DORK_SLEEP,
+    HYPERKITTY_SERVERS,
     LOCAL_SCAN_DIR,
     LOG_DATE_FORMAT,
     LOG_FORMAT,
@@ -119,6 +122,7 @@ from email_extractor.services.mx_checker import MxChecker
 from email_extractor.services.pipermail_crawler import PipermailCrawler
 from email_extractor.services.comb_scanner import CombApiScanner
 from email_extractor.services.dork_scanner import DorkScanner
+from email_extractor.services.hyperkitty_crawler import HyperKittyCrawler
 from websocket_manager import ws_manager
 
 # ---------------------------------------------------------------------------
@@ -511,6 +515,34 @@ async def _main_logic() -> None:
         msg_piper = f"✅ Обработано {discovered_count} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
         log.info(msg_piper)
         asyncio.create_task(ws_manager.send_log(msg_piper))
+
+        # --------------------------------------------------------------
+        # ФАЗА 2.5: HyperKitty (Fedora)
+        # --------------------------------------------------------------
+        if not (_STOP_REQUESTED or _CANCEL_REQUESTED) and HYPERKITTY_SERVERS:
+            log.info("\n📧 ЭТАП 2.5: HyperKitty (Fedora)")
+            phase_start = datetime.now()
+            asyncio.create_task(ws_manager.send_log("📧 ЭТАП 2.5: HyperKitty (Fedora) — обход архивов..."))
+
+            hk_crawler = HyperKittyCrawler(servers=HYPERKITTY_SERVERS)
+            pbar_hk = async_tqdm(desc="HyperKitty страницы", unit="стр", position=0, total=None)
+            _spawn_workers(pbar_hk)
+
+            hk_discovered = 0
+            async for url in hk_crawler.discover(http):
+                if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                    break
+                if url not in enqueued_urls and not repo.is_url_processed(url):
+                    enqueued_urls.add(url)
+                    await url_queue.put(url)
+                    hk_discovered += 1
+
+            await url_queue.join()
+            pbar_hk.close()
+
+            msg_hk = f"✅ HyperKitty (Fedora): обработано {hk_discovered} страниц. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+            log.info(msg_hk)
+            asyncio.create_task(ws_manager.send_log(msg_hk))
 
         # --------------------------------------------------------------
         # ФАЗА 3: GitHub

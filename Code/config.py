@@ -85,14 +85,32 @@ LOG_FORMAT: str = "%(asctime)s  %(message)s"
 LOG_DATE_FORMAT: str = "%H:%M:%S"
 
 # ---------------------------------------------------------------------------
-# Pipermail — список серверов
+# Pipermail — список серверов (только живые, динамические)
 # ---------------------------------------------------------------------------
 PIPERMAIL_SERVERS: list[str] = [
-    "https://mail.python.org/pipermail/",
     "https://lists.ubuntu.com/archives/",
-    "https://mail.gnome.org/archives/",
-    "https://lists.freebsd.org/pipermail/",
-    "https://lists.fedoraproject.org/archives/",
+]
+
+# ---------------------------------------------------------------------------
+# HyperKitty (Mailman 3) — Fedora
+# URL формат: base + /archives/list/<listname>/
+# ---------------------------------------------------------------------------
+HYPERKITTY_SERVERS: list[dict] = [
+    {
+        "base": "https://lists.fedoraproject.org",
+        "lists": [
+            "devel@lists.fedoraproject.org",
+            "users@lists.fedoraproject.org",
+            "test@lists.fedoraproject.org",
+            "infrastructure@lists.fedoraproject.org",
+            "devel-announce@lists.fedoraproject.org",
+            "epel-devel@lists.fedoraproject.org",
+            "kernel@lists.fedoraproject.org",
+            "desktop@lists.fedoraproject.org",
+            "python-devel@lists.fedoraproject.org",
+            "server@lists.fedoraproject.org",
+        ],
+    },
 ]
 
 # ---------------------------------------------------------------------------
