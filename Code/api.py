@@ -136,11 +136,22 @@ async def add_job(files: Optional[List[UploadFile]] = File(None)):
     Постановка задания в очередь конвейера.
     Фронтенд отправляет эту команду вместо прямого старта.
     """
+    # Если бэкенд в фазе авто-запуска (ждёт 2 минуты после рестарта),
+    # отменяем авто-запуск и принимаем явный запрос от пользователя
     if parser_engine.is_running:
-        return JSONResponse(
-            status_code=409,
-            content={"status": "error", "message": "Парсинг сейчас выполняется. Дождитесь завершения."}
-        )
+        auto_task = getattr(parser_engine, 'auto_resume_task', None)
+        if auto_task and not auto_task.done():
+            auto_task.cancel()
+            parser_engine.auto_resume_task = None
+            parser_engine.is_running = False
+            msg = "[АВТОМАТИКА] Авто-запуск отменён — получен явный запрос от пользователя."
+            parser_engine.log_history.append(msg)
+            log.info(msg)
+        else:
+            return JSONResponse(
+                status_code=409,
+                content={"status": "error", "message": "Парсинг сейчас выполняется. Дождитесь завершения."}
+            )
 
     if files:
         LOCAL_SCAN_DIR.mkdir(parents=True, exist_ok=True)
