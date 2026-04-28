@@ -216,6 +216,12 @@ async def download_info():
         "estimated_csv_bytes": count * avg_csv_line_len + 30,  # +header
     }
 
+@app.get("/emails/json")
+async def get_emails_json():
+    """Возвращает все email как JSON-массив (для кросс-бэкенд дедупликации)."""
+    repo = SqliteContactRepository(db_path=DB_OUTPUT)
+    return {"emails": repo.get_all_emails(), "count": repo.get_count()}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await parser_engine.connect(websocket)

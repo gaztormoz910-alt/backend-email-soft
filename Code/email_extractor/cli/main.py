@@ -107,11 +107,16 @@ from config import (  # noqa: E402
     MAX_CONCURRENT,
     MAX_MB,
     MEMORY_LIMIT_MB,
+    PARSER_SOURCES,
     PIPERMAIL_SERVERS,
     REQUEST_TIMEOUT,
     TXT_OUTPUT,
     DB_OUTPUT,
 )
+
+def _source_enabled(name: str) -> bool:
+    """Проверяет, включён ли данный источник на этом инстансе."""
+    return "all" in PARSER_SOURCES or name in PARSER_SOURCES
 from email_extractor.core.entities import Contact
 from email_extractor.infrastructure.sqlite_repository import SqliteContactRepository
 from email_extractor.infrastructure.http_client import AsyncHttpClient
@@ -464,7 +469,7 @@ async def _main_logic() -> None:
         # ФАЗА 1: COMB API (ProxyNova) - Запускаем в фоне!
         # --------------------------------------------------------------
         comb_task = None
-        if not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+        if _source_enabled("comb") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
             log.info("\n🔓 ЭТАП 1: COMB API (ProxyNova — публичная база утечек) - Запуск в фоне")
             asyncio.create_task(ws_manager.send_log("🔓 ЭТАП 1: COMB API запущен в фоновом режиме..."))
             
@@ -490,36 +495,39 @@ async def _main_logic() -> None:
             comb_task = asyncio.create_task(_run_comb())
 
     
-# --------------------------------------------------------------
+        # Общий set для дедупликации URL между фазами
+        enqueued_urls: set[str] = set()
+
+        # --------------------------------------------------------------
         # ФАЗА 2: Pipermail
         # --------------------------------------------------------------
-        log.info("\n📧 ЭТАП 2: Архивы Pipermail")
-        phase_start = datetime.now()
-        crawler = PipermailCrawler(servers=PIPERMAIL_SERVERS)
-        pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
-        _spawn_workers(pbar)
+        if _source_enabled("pipermail") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+            log.info("\n📧 ЭТАП 2: Архивы Pipermail")
+            phase_start = datetime.now()
+            crawler = PipermailCrawler(servers=PIPERMAIL_SERVERS)
+            pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
+            _spawn_workers(pbar)
 
-        discovered_count = 0
-        enqueued_urls: set[str] = set()  # Защита от дубликатов URL при параллельном краулинге
-        async for url in crawler.discover(http):
-            if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                break
-            if url not in enqueued_urls and not repo.is_url_processed(url):
-                enqueued_urls.add(url)
-                await url_queue.put(url)
-                discovered_count += 1
+            discovered_count = 0
+            async for url in crawler.discover(http):
+                if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                    break
+                if url not in enqueued_urls and not repo.is_url_processed(url):
+                    enqueued_urls.add(url)
+                    await url_queue.put(url)
+                    discovered_count += 1
 
-        await url_queue.join()
-        pbar.close()
+            await url_queue.join()
+            pbar.close()
 
-        msg_piper = f"✅ Обработано {discovered_count} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-        log.info(msg_piper)
-        asyncio.create_task(ws_manager.send_log(msg_piper))
+            msg_piper = f"✅ Обработано {discovered_count} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+            log.info(msg_piper)
+            asyncio.create_task(ws_manager.send_log(msg_piper))
 
         # --------------------------------------------------------------
         # ФАЗА 2.5: HyperKitty (Fedora)
         # --------------------------------------------------------------
-        if not (_STOP_REQUESTED or _CANCEL_REQUESTED) and HYPERKITTY_SERVERS:
+        if _source_enabled("hyperkitty") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and HYPERKITTY_SERVERS:
             log.info("\n📧 ЭТАП 2.5: HyperKitty (Fedora)")
             phase_start = datetime.now()
             asyncio.create_task(ws_manager.send_log("📧 ЭТАП 2.5: HyperKitty (Fedora) — обход архивов..."))
@@ -547,29 +555,30 @@ async def _main_logic() -> None:
         # --------------------------------------------------------------
         # ФАЗА 3: GitHub
         # --------------------------------------------------------------
-        log.info("\n🐙 ЭТАП 3: GitHub")
-        phase_start = datetime.now()
+        if _source_enabled("github") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+            log.info("\n🐙 ЭТАП 3: GitHub")
+            phase_start = datetime.now()
 
-        github = GitHubScanner(token=GITHUB_TOKEN)
-        gh_contacts = await github.scan(http)
-        added_gh = 0
+            github = GitHubScanner(token=GITHUB_TOKEN)
+            gh_contacts = await github.scan(http)
+            added_gh = 0
 
-        for contact in gh_contacts:
-            if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                break
-            if await mx.check(contact.domain):
-                db_contact_queue.put_nowait(contact)
-                added_gh += 1
+            for contact in gh_contacts:
+                if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                    break
+                if await mx.check(contact.domain):
+                    db_contact_queue.put_nowait(contact)
+                    added_gh += 1
 
-        if added_gh > 0:
-            msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
-            log.info(msg_gh)
-        asyncio.create_task(ws_manager.send_log(msg_gh))
+            if added_gh > 0:
+                msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
+                log.info(msg_gh)
+                asyncio.create_task(ws_manager.send_log(msg_gh))
 
         # --------------------------------------------------------------
         # ФАЗА 4: Google Dorks
         # --------------------------------------------------------------
-        if not (_STOP_REQUESTED or _CANCEL_REQUESTED) and EMAIL_DORKS:
+        if _source_enabled("dorks") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and EMAIL_DORKS:
             log.info("\n🔍 ЭТАП 4: Google Dorks (%d запросов)", len(EMAIL_DORKS))
             phase_start = datetime.now()
             asyncio.create_task(ws_manager.send_log(f"🔍 ЭТАП 4: Google Dorks — {len(EMAIL_DORKS)} поисковых запросов..."))

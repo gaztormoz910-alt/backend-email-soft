@@ -148,6 +148,13 @@ class SqliteContactRepository:
                 for row in rows:
                     yield f"{row[0]}\n"
 
+    def get_all_emails(self) -> list[str]:
+        """Возвращает все email из базы (для кросс-бэкенд дедупликации)."""
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT email FROM contacts ORDER BY email")
+            return [row[0] for row in cursor.fetchall()]
+
     # ------------------------------------------------------------------
     # Processed URLs checkpoint (LRU-кэш + SQLite fallback)
     # ------------------------------------------------------------------

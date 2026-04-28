@@ -78,6 +78,17 @@ DORK_RESULTS_PER_QUERY: int = int(os.environ.get("DORK_RESULTS_PER_QUERY", "10")
 DORK_SLEEP: float = float(os.environ.get("DORK_SLEEP", "5"))
 
 # ---------------------------------------------------------------------------
+# Мульти-бэкенд: какие фазы запускать на этом инстансе
+# Допустимые: pipermail, hyperkitty, comb, github, dorks
+# "all" = запускать всё (для локальной разработки / одиночного бэкенда)
+# ---------------------------------------------------------------------------
+PARSER_SOURCES: set[str] = set(
+    s.strip().lower()
+    for s in os.environ.get("PARSER_SOURCES", "all").split(",")
+    if s.strip()
+)
+
+# ---------------------------------------------------------------------------
 # Логирование
 # ---------------------------------------------------------------------------
 LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
