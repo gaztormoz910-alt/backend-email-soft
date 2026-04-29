@@ -411,6 +411,10 @@ async def _main_logic() -> None:
     db_url_queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
 
     db_writer_task = asyncio.create_task(_db_writer(db_contact_queue, db_url_queue, repo))
+    comb_task = None
+    workers = []
+
+    try:
 
     mx = MxChecker()
     extractor = EmailExtractorService()
@@ -461,7 +465,6 @@ async def _main_logic() -> None:
         # Пул воркеров (повторно используется для всех сетевых фаз)
         # --------------------------------------------------------------
         url_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
-        workers = []
 
         def _spawn_workers(pbar=None):
             nonlocal workers
@@ -477,7 +480,6 @@ async def _main_logic() -> None:
         # --------------------------------------------------------------
         # ФАЗА 1: COMB API (ProxyNova) - Запускаем в фоне!
         # --------------------------------------------------------------
-        comb_task = None
         if _source_enabled("comb") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
             log.info("\n🔓 ЭТАП 1: COMB API (ProxyNova — публичная база утечек) - Запуск в фоне")
             asyncio.create_task(ws_manager.send_log("🔓 ЭТАП 1: COMB API запущен в фоновом режиме..."))
@@ -621,49 +623,55 @@ async def _main_logic() -> None:
         if comb_task:
             await comb_task
 
-        # ------------------------------------------------------------------
-    # Завершение
-    # ------------------------------------------------------------------
-    db_writer_task.cancel()
-    # Финальный сброс очередей в базу
-    contacts_to_add = []
-    urls_to_mark = []
-    while not db_url_queue.empty():
-        urls_to_mark.append(db_url_queue.get_nowait())
-    while not db_contact_queue.empty():
-        contacts_to_add.append(db_contact_queue.get_nowait())
-    if urls_to_mark:
-        repo.mark_urls_processed_bulk(urls_to_mark)
-    if contacts_to_add:
-        repo.add_contacts_bulk(contacts_to_add)
-    if _CANCEL_REQUESTED:
-        ws_manager.clear_history()
-        ws_manager.email_count = 0
-        asyncio.create_task(ws_manager.send_count(0))
+        total_elapsed = (datetime.now() - start_time).total_seconds()
+        total_emails = repo.get_count()
+        total_processed = repo.get_processed_count()
 
-        msg_cancel = "🛑 СЕССИЯ ОТМЕНЕНА. Прогресс полностью стёрт. Готов к новому старту."
-        log.warning(msg_cancel)
-        asyncio.create_task(ws_manager.send_log(msg_cancel))
+        msg_end = (
+            f"{'=' * 60}\n"
+            f"🏁 РАБОТА ЗАВЕРШЕНА за {_format_time(total_elapsed)}\n"
+            f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {total_emails}\n"
+            f"🔗 Обработано URL: {total_processed}\n"
+            f"💾 MX-кэш: {mx.cache_size} доменов проверено\n"
+            f"{'=' * 60}"
+        )
+        log.info(msg_end)
+        asyncio.create_task(ws_manager.send_log(msg_end))
 
-        # Удаляем маркер — следующий старт начнёт с чистого листа
-        if CHECKPOINT_FILE.exists():
-            CHECKPOINT_FILE.unlink()
-    # else: маркер остаётся — следующий запуск продолжит с того же места
+    finally:
+        # Гарантированное завершение всех фоновых задач
+        db_writer_task.cancel()
+        if comb_task and not comb_task.done():
+            comb_task.cancel()
+        for w in workers:
+            if not w.done():
+                w.cancel()
 
-    total_elapsed = (datetime.now() - start_time).total_seconds()
-    total_emails = repo.get_count()
-    total_processed = repo.get_processed_count()
+        # Финальный сброс очередей в базу
+        contacts_to_add = []
+        urls_to_mark = []
+        while not db_url_queue.empty():
+            urls_to_mark.append(db_url_queue.get_nowait())
+        while not db_contact_queue.empty():
+            contacts_to_add.append(db_contact_queue.get_nowait())
+        if urls_to_mark:
+            repo.mark_urls_processed_bulk(urls_to_mark)
+        if contacts_to_add:
+            repo.add_contacts_bulk(contacts_to_add)
 
-    msg_end = (
-        f"{'=' * 60}\n"
-        f"🏁 РАБОТА ЗАВЕРШЕНА за {_format_time(total_elapsed)}\n"
-        f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {total_emails}\n"
-        f"🔗 Обработано URL: {total_processed}\n"
-        f"💾 MX-кэш: {mx.cache_size} доменов проверено\n"
-        f"{'=' * 60}"
-    )
-    log.info(msg_end)
-    asyncio.create_task(ws_manager.send_log(msg_end))
+        if _CANCEL_REQUESTED:
+            ws_manager.clear_history()
+            ws_manager.email_count = 0
+            asyncio.create_task(ws_manager.send_count(0))
+
+            msg_cancel = "🛑 СЕССИЯ ОТМЕНЕНА. Прогресс полностью стёрт. Готов к новому старту."
+            log.warning(msg_cancel)
+            asyncio.create_task(ws_manager.send_log(msg_cancel))
+
+            # Удаляем маркер — следующий старт начнёт с чистого листа
+            if CHECKPOINT_FILE.exists():
+                CHECKPOINT_FILE.unlink()
+        # else: маркер остаётся — следующий запуск продолжит с того же места
 
 
 # ---------------------------------------------------------------------------
