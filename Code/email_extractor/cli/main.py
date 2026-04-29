@@ -416,227 +416,227 @@ async def _main_logic() -> None:
 
     try:
 
-    mx = MxChecker()
-    extractor = EmailExtractorService()
-    sem = asyncio.Semaphore(MAX_CONCURRENT)
+        mx = MxChecker()
+        extractor = EmailExtractorService()
+        sem = asyncio.Semaphore(MAX_CONCURRENT)
 
-    # Создаём маркер-файл СРАЗУ — защита от очистки БД при краше/OOM
-    _touch_checkpoint()
+        # Создаём маркер-файл СРАЗУ — защита от очистки БД при краше/OOM
+        _touch_checkpoint()
 
-    processed_before = repo.get_processed_count()
-    log.info("📌 Уже обработано URL (из прошлых запусков): %d", processed_before)
+        processed_before = repo.get_processed_count()
+        log.info("📌 Уже обработано URL (из прошлых запусков): %d", processed_before)
 
-    # ------------------------------------------------------------------
-    # ФАЗА 0: Локальные файлы
-    # ------------------------------------------------------------------
-    log.info("\n📂 ЭТАП 0: Локальное сканирование")
-    phase_start = datetime.now()
+        # ------------------------------------------------------------------
+        # ФАЗА 0: Локальные файлы
+        # ------------------------------------------------------------------
+        log.info("\n📂 ЭТАП 0: Локальное сканирование")
+        phase_start = datetime.now()
 
-    scanner = LocalFileScanner(extensions={"*"})
-    local_contacts: list[Contact] = await asyncio.to_thread(scanner.scan, LOCAL_SCAN_DIR)
+        scanner = LocalFileScanner(extensions={"*"})
+        local_contacts: list[Contact] = await asyncio.to_thread(scanner.scan, LOCAL_SCAN_DIR)
 
-    with sync_tqdm(local_contacts, desc="📂 Фильтрация локальных", unit="шт") as pbar:
-        added_local = 0
-        for c in pbar:
-            if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                break
-            if not is_fake_email(c.email):
-                if repo.add_if_not_exists(c):
-                    added_local += 1
+        with sync_tqdm(local_contacts, desc="📂 Фильтрация локальных", unit="шт") as pbar:
+            added_local = 0
+            for c in pbar:
+                if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                    break
+                if not is_fake_email(c.email):
+                    if repo.add_if_not_exists(c):
+                        added_local += 1
 
-    if added_local > 0:
-        asyncio.create_task(ws_manager.send_count(repo.get_count()))
+        if added_local > 0:
+            asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
-    msg_local = f"✅ Локальные файлы добавили {added_local} адресов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-    log.info(msg_local)
-    asyncio.create_task(ws_manager.send_log(msg_local))
+        msg_local = f"✅ Локальные файлы добавили {added_local} адресов. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+        log.info(msg_local)
+        asyncio.create_task(ws_manager.send_log(msg_local))
 
-    # ------------------------------------------------------------------
-    # Открываем HTTP-клиент для сетевых фаз
-    # ------------------------------------------------------------------
-    async with AsyncHttpClient(
-        timeout=REQUEST_TIMEOUT,
-        max_mb=MAX_MB,
-        max_connections=MAX_CONCURRENT * 2,
-        max_keepalive=MAX_CONCURRENT,
-    ) as http:
+        # ------------------------------------------------------------------
+        # Открываем HTTP-клиент для сетевых фаз
+        # ------------------------------------------------------------------
+        async with AsyncHttpClient(
+            timeout=REQUEST_TIMEOUT,
+            max_mb=MAX_MB,
+            max_connections=MAX_CONCURRENT * 2,
+            max_keepalive=MAX_CONCURRENT,
+        ) as http:
 
-        # --------------------------------------------------------------
-        # Пул воркеров (повторно используется для всех сетевых фаз)
-        # --------------------------------------------------------------
-        url_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
+            # --------------------------------------------------------------
+            # Пул воркеров (повторно используется для всех сетевых фаз)
+            # --------------------------------------------------------------
+            url_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
 
-        def _spawn_workers(pbar=None):
-            nonlocal workers
-            for w in workers:
-                w.cancel()
-            workers = [
-                asyncio.create_task(
-                    _worker(url_queue, db_contact_queue, db_url_queue, http, sem, extractor, mx, repo, pbar)
-                )
-                for _ in range(MAX_CONCURRENT)
-            ]
+            def _spawn_workers(pbar=None):
+                nonlocal workers
+                for w in workers:
+                    w.cancel()
+                workers = [
+                    asyncio.create_task(
+                        _worker(url_queue, db_contact_queue, db_url_queue, http, sem, extractor, mx, repo, pbar)
+                    )
+                    for _ in range(MAX_CONCURRENT)
+                ]
 
-        # --------------------------------------------------------------
-        # ФАЗА 1: COMB API (ProxyNova) - Запускаем в фоне!
-        # --------------------------------------------------------------
-        if _source_enabled("comb") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-            log.info("\n🔓 ЭТАП 1: COMB API (ProxyNova — публичная база утечек) - Запуск в фоне")
-            asyncio.create_task(ws_manager.send_log("🔓 ЭТАП 1: COMB API запущен в фоновом режиме..."))
+            # --------------------------------------------------------------
+            # ФАЗА 1: COMB API (ProxyNova) - Запускаем в фоне!
+            # --------------------------------------------------------------
+            if _source_enabled("comb") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n🔓 ЭТАП 1: COMB API (ProxyNova — публичная база утечек) - Запуск в фоне")
+                asyncio.create_task(ws_manager.send_log("🔓 ЭТАП 1: COMB API запущен в фоновом режиме..."))
             
-            async def _run_comb():
+                async def _run_comb():
+                    phase_start = datetime.now()
+                    comb = CombApiScanner(
+                        api_url=COMB_API_URL,
+                        domains=COMB_DOMAINS,
+                        sleep_between=COMB_SLEEP,
+                    )
+                    comb_contacts = await comb.scan(http)
+                    added_comb = 0
+                    for contact in comb_contacts:
+                        if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                            break
+                        if await mx.check(contact.domain):
+                            await db_contact_queue.put(contact)
+                            added_comb += 1
+                    msg_comb = f"✅ COMB API: +{added_comb} адресов из {len(COMB_DOMAINS)} доменов. Завершено за: {_format_time((datetime.now() - phase_start).total_seconds())}"
+                    log.info(msg_comb)
+                    asyncio.create_task(ws_manager.send_log(msg_comb))
+
+                comb_task = asyncio.create_task(_run_comb())
+
+    
+            # Общий set для дедупликации URL между фазами
+            enqueued_urls: set[str] = set()
+
+            # --------------------------------------------------------------
+            # ФАЗА 2: Pipermail
+            # --------------------------------------------------------------
+            if _source_enabled("pipermail") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n📧 ЭТАП 2: Архивы Pipermail")
                 phase_start = datetime.now()
-                comb = CombApiScanner(
-                    api_url=COMB_API_URL,
-                    domains=COMB_DOMAINS,
-                    sleep_between=COMB_SLEEP,
-                )
-                comb_contacts = await comb.scan(http)
-                added_comb = 0
-                for contact in comb_contacts:
+                crawler = PipermailCrawler(servers=PIPERMAIL_SERVERS)
+                pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
+                _spawn_workers(pbar)
+
+                discovered_count = 0
+                async for url in crawler.discover(http):
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                        break
+                    if url not in enqueued_urls and not repo.is_url_processed(url):
+                        enqueued_urls.add(url)
+                        await url_queue.put(url)
+                        discovered_count += 1
+
+                await url_queue.join()
+                pbar.close()
+
+                msg_piper = f"✅ Обработано {discovered_count} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+                log.info(msg_piper)
+                asyncio.create_task(ws_manager.send_log(msg_piper))
+
+            # --------------------------------------------------------------
+            # ФАЗА 2.5: HyperKitty (Fedora)
+            # --------------------------------------------------------------
+            if _source_enabled("hyperkitty") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and HYPERKITTY_SERVERS:
+                log.info("\n📧 ЭТАП 2.5: HyperKitty (Fedora)")
+                phase_start = datetime.now()
+                asyncio.create_task(ws_manager.send_log("📧 ЭТАП 2.5: HyperKitty (Fedora) — обход архивов..."))
+
+                hk_crawler = HyperKittyCrawler(servers=HYPERKITTY_SERVERS)
+                pbar_hk = async_tqdm(desc="HyperKitty страницы", unit="стр", position=0, total=None)
+                _spawn_workers(pbar_hk)
+
+                hk_discovered = 0
+                async for url in hk_crawler.discover(http):
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                        break
+                    if url not in enqueued_urls and not repo.is_url_processed(url):
+                        enqueued_urls.add(url)
+                        await url_queue.put(url)
+                        hk_discovered += 1
+
+                await url_queue.join()
+                pbar_hk.close()
+
+                msg_hk = f"✅ HyperKitty (Fedora): обработано {hk_discovered} страниц. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+                log.info(msg_hk)
+                asyncio.create_task(ws_manager.send_log(msg_hk))
+
+            # --------------------------------------------------------------
+            # ФАЗА 3: GitHub
+            # --------------------------------------------------------------
+            if _source_enabled("github") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n🐙 ЭТАП 3: GitHub")
+                phase_start = datetime.now()
+
+                github = GitHubScanner(token=GITHUB_TOKEN)
+                gh_contacts = await github.scan(http)
+                added_gh = 0
+
+                for contact in gh_contacts:
                     if _STOP_REQUESTED or _CANCEL_REQUESTED:
                         break
                     if await mx.check(contact.domain):
                         await db_contact_queue.put(contact)
-                        added_comb += 1
-                msg_comb = f"✅ COMB API: +{added_comb} адресов из {len(COMB_DOMAINS)} доменов. Завершено за: {_format_time((datetime.now() - phase_start).total_seconds())}"
-                log.info(msg_comb)
-                asyncio.create_task(ws_manager.send_log(msg_comb))
+                        added_gh += 1
 
-            comb_task = asyncio.create_task(_run_comb())
+                if added_gh > 0:
+                    msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
+                    log.info(msg_gh)
+                    asyncio.create_task(ws_manager.send_log(msg_gh))
 
-    
-        # Общий set для дедупликации URL между фазами
-        enqueued_urls: set[str] = set()
+            # --------------------------------------------------------------
+            # ФАЗА 4: Google Dorks
+            # --------------------------------------------------------------
+            if _source_enabled("dorks") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and EMAIL_DORKS:
+                log.info("\n🔍 ЭТАП 4: Google Dorks (%d запросов)", len(EMAIL_DORKS))
+                phase_start = datetime.now()
+                asyncio.create_task(ws_manager.send_log(f"🔍 ЭТАП 4: Google Dorks — {len(EMAIL_DORKS)} поисковых запросов..."))
 
-        # --------------------------------------------------------------
-        # ФАЗА 2: Pipermail
-        # --------------------------------------------------------------
-        if _source_enabled("pipermail") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-            log.info("\n📧 ЭТАП 2: Архивы Pipermail")
-            phase_start = datetime.now()
-            crawler = PipermailCrawler(servers=PIPERMAIL_SERVERS)
-            pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
-            _spawn_workers(pbar)
+                dork_scanner = DorkScanner(
+                    dorks=EMAIL_DORKS,
+                    results_per_query=DORK_RESULTS_PER_QUERY,
+                    sleep_between=DORK_SLEEP,
+                )
 
-            discovered_count = 0
-            async for url in crawler.discover(http):
-                if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                    break
-                if url not in enqueued_urls and not repo.is_url_processed(url):
-                    enqueued_urls.add(url)
-                    await url_queue.put(url)
-                    discovered_count += 1
+                pbar_dork = async_tqdm(desc="Обработка Dork-URL", unit="стр", position=0, total=None)
+                _spawn_workers(pbar_dork)
 
-            await url_queue.join()
-            pbar.close()
+                dork_discovered = 0
+                async for url in dork_scanner.discover(http, known_urls=enqueued_urls):
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                        break
+                    if not repo.is_url_processed(url):
+                        enqueued_urls.add(url)
+                        await url_queue.put(url)
+                        dork_discovered += 1
 
-            msg_piper = f"✅ Обработано {discovered_count} страниц Pipermail. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-            log.info(msg_piper)
-            asyncio.create_task(ws_manager.send_log(msg_piper))
+                await url_queue.join()
+                pbar_dork.close()
 
-        # --------------------------------------------------------------
-        # ФАЗА 2.5: HyperKitty (Fedora)
-        # --------------------------------------------------------------
-        if _source_enabled("hyperkitty") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and HYPERKITTY_SERVERS:
-            log.info("\n📧 ЭТАП 2.5: HyperKitty (Fedora)")
-            phase_start = datetime.now()
-            asyncio.create_task(ws_manager.send_log("📧 ЭТАП 2.5: HyperKitty (Fedora) — обход архивов..."))
+                msg_dork = f"✅ Google Dorks: обработано {dork_discovered} URL. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+                log.info(msg_dork)
+                asyncio.create_task(ws_manager.send_log(msg_dork))
 
-            hk_crawler = HyperKittyCrawler(servers=HYPERKITTY_SERVERS)
-            pbar_hk = async_tqdm(desc="HyperKitty страницы", unit="стр", position=0, total=None)
-            _spawn_workers(pbar_hk)
+            # Ждём завершения фонового COMB API
+            if comb_task:
+                await comb_task
 
-            hk_discovered = 0
-            async for url in hk_crawler.discover(http):
-                if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                    break
-                if url not in enqueued_urls and not repo.is_url_processed(url):
-                    enqueued_urls.add(url)
-                    await url_queue.put(url)
-                    hk_discovered += 1
+            total_elapsed = (datetime.now() - start_time).total_seconds()
+            total_emails = repo.get_count()
+            total_processed = repo.get_processed_count()
 
-            await url_queue.join()
-            pbar_hk.close()
-
-            msg_hk = f"✅ HyperKitty (Fedora): обработано {hk_discovered} страниц. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-            log.info(msg_hk)
-            asyncio.create_task(ws_manager.send_log(msg_hk))
-
-        # --------------------------------------------------------------
-        # ФАЗА 3: GitHub
-        # --------------------------------------------------------------
-        if _source_enabled("github") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-            log.info("\n🐙 ЭТАП 3: GitHub")
-            phase_start = datetime.now()
-
-            github = GitHubScanner(token=GITHUB_TOKEN)
-            gh_contacts = await github.scan(http)
-            added_gh = 0
-
-            for contact in gh_contacts:
-                if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                    break
-                if await mx.check(contact.domain):
-                    await db_contact_queue.put(contact)
-                    added_gh += 1
-
-            if added_gh > 0:
-                msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
-                log.info(msg_gh)
-                asyncio.create_task(ws_manager.send_log(msg_gh))
-
-        # --------------------------------------------------------------
-        # ФАЗА 4: Google Dorks
-        # --------------------------------------------------------------
-        if _source_enabled("dorks") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and EMAIL_DORKS:
-            log.info("\n🔍 ЭТАП 4: Google Dorks (%d запросов)", len(EMAIL_DORKS))
-            phase_start = datetime.now()
-            asyncio.create_task(ws_manager.send_log(f"🔍 ЭТАП 4: Google Dorks — {len(EMAIL_DORKS)} поисковых запросов..."))
-
-            dork_scanner = DorkScanner(
-                dorks=EMAIL_DORKS,
-                results_per_query=DORK_RESULTS_PER_QUERY,
-                sleep_between=DORK_SLEEP,
+            msg_end = (
+                f"{'=' * 60}\n"
+                f"🏁 РАБОТА ЗАВЕРШЕНА за {_format_time(total_elapsed)}\n"
+                f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {total_emails}\n"
+                f"🔗 Обработано URL: {total_processed}\n"
+                f"💾 MX-кэш: {mx.cache_size} доменов проверено\n"
+                f"{'=' * 60}"
             )
-
-            pbar_dork = async_tqdm(desc="Обработка Dork-URL", unit="стр", position=0, total=None)
-            _spawn_workers(pbar_dork)
-
-            dork_discovered = 0
-            async for url in dork_scanner.discover(http, known_urls=enqueued_urls):
-                if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                    break
-                if not repo.is_url_processed(url):
-                    enqueued_urls.add(url)
-                    await url_queue.put(url)
-                    dork_discovered += 1
-
-            await url_queue.join()
-            pbar_dork.close()
-
-            msg_dork = f"✅ Google Dorks: обработано {dork_discovered} URL. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
-            log.info(msg_dork)
-            asyncio.create_task(ws_manager.send_log(msg_dork))
-
-        # Ждём завершения фонового COMB API
-        if comb_task:
-            await comb_task
-
-        total_elapsed = (datetime.now() - start_time).total_seconds()
-        total_emails = repo.get_count()
-        total_processed = repo.get_processed_count()
-
-        msg_end = (
-            f"{'=' * 60}\n"
-            f"🏁 РАБОТА ЗАВЕРШЕНА за {_format_time(total_elapsed)}\n"
-            f"📊 ВСЕГО УНИКАЛЬНЫХ EMAIL: {total_emails}\n"
-            f"🔗 Обработано URL: {total_processed}\n"
-            f"💾 MX-кэш: {mx.cache_size} доменов проверено\n"
-            f"{'=' * 60}"
-        )
-        log.info(msg_end)
-        asyncio.create_task(ws_manager.send_log(msg_end))
+            log.info(msg_end)
+            asyncio.create_task(ws_manager.send_log(msg_end))
 
     finally:
         # Гарантированное завершение всех фоновых задач
