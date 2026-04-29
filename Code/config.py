@@ -99,7 +99,10 @@ LOG_DATE_FORMAT: str = "%H:%M:%S"
 # Pipermail — список серверов (только живые, динамические)
 # ---------------------------------------------------------------------------
 PIPERMAIL_SERVERS: list[str] = [
+    "https://mail.python.org/pipermail/",
     "https://lists.ubuntu.com/archives/",
+    "https://mail.gnome.org/archives/",
+    "https://lists.freebsd.org/pipermail/",
 ]
 
 # ---------------------------------------------------------------------------
