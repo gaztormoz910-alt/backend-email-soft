@@ -122,6 +122,16 @@ class SqliteContactRepository:
         with self._lock:
             self._conn.execute("DELETE FROM contacts")
 
+    def truncate_wal(self) -> None:
+        """Принудительно сбрасывает WAL-файл в основную БД и очищает его.
+        Это предотвращает разрастание .db-wal файла и утечку Linux Page Cache,
+        из-за которой Railway показывает высокое потребление ОЗУ."""
+        with self._lock:
+            try:
+                self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except Exception as e:
+                log.debug(f"Failed to truncate WAL: {e}")
+
     def stream_csv(self) -> Generator[str, None, None]:
         yield "Имя,Фамилия,Email\n"
         with self._lock:

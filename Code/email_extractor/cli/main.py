@@ -300,6 +300,7 @@ async def _db_writer(
             if gc_counter >= 60:  # 60 * 0.2s = 12 сек
                 gc_counter = 0
                 gc.collect()
+                repo.truncate_wal()  # Очищаем WAL-файл, чтобы Railway не считал его за оперативную память
                 mem_mb = _get_memory_mb()
                 if mem_mb > 0:
                     if mem_mb > MEMORY_LIMIT_MB:
@@ -309,6 +310,7 @@ async def _db_writer(
                         gc.collect()
                         await asyncio.sleep(10)
                         gc.collect()
+                        repo.truncate_wal()
 
             await asyncio.sleep(0.2)
         except asyncio.CancelledError:
