@@ -130,8 +130,14 @@ async def get_state():
         "elapsed_seconds": elapsed
     }
 
+from fastapi import Form
+
 @app.post("/jobs")
-async def add_job(files: Optional[List[UploadFile]] = File(None)):
+async def add_job(
+    files: Optional[List[UploadFile]] = File(None),
+    parse_mode: str = Form("all"),
+    single_server: bool = Form(False)
+):
     """
     Постановка задания в очередь конвейера.
     Фронтенд отправляет эту команду вместо прямого старта.
@@ -165,7 +171,7 @@ async def add_job(files: Optional[List[UploadFile]] = File(None)):
                             break
                         buffer.write(chunk)
                     
-    await parser_engine.add_job()
+    await parser_engine.add_job(single_server=single_server)
     
     return JSONResponse(
         status_code=202,

@@ -33,9 +33,20 @@ class BackgroundParserEngine:
             job = await self.queue.get()
             self.is_running = True
             self._user_stopped = False  # Сбрасываем при старте нового задания
-            log.info("Job received. Starting extraction execution.")
+            log.info(f"Job received (single_server={job.get('single_server')}). Starting extraction execution.")
             
             import email_extractor.cli.main as core_main
+            import config
+            
+            # Если это режим "Один сервер", игнорируем любые деления и парсим всё
+            if job.get("single_server"):
+                log.info("[SINGLE_SERVER] Overriding config to run ALL sources fully.")
+                config.PARSER_SOURCES = {"pipermail", "hyperkitty", "comb", "github", "dorks"}
+                config.PIPERMAIL_SERVERS = config._ALL_PIPERMAIL_SERVERS
+                config.HYPERKITTY_SERVERS[0]["lists"] = config._ALL_HK_LISTS
+                config.COMB_DOMAINS = config._ALL_COMB_DOMAINS
+                config.EMAIL_DORKS = config._ALL_EMAIL_DORKS
+                config.BACKEND_INDEX = None
             
             try:
                 # Execution happens inside the infinite engine loop
@@ -57,7 +68,7 @@ class BackgroundParserEngine:
                             msg_start = "[АВТОМАТИКА] Возобновляем работу после внутренней ошибки..."
                             self.log_history.append(msg_start)
                             await self.broadcast({"type": "LOG", "message": msg_start})
-                            await self.add_job()
+                            await self.add_job(single_server=job.get("single_server", False))
                         except asyncio.CancelledError:
                             pass
                     self.auto_resume_task = asyncio.create_task(_internal_auto_resume())
@@ -71,7 +82,7 @@ class BackgroundParserEngine:
                 self.queue.task_done()
                 log.info("Job processing finished. Engine is ready for next job.")
 
-    async def add_job(self):
+    async def add_job(self, single_server=False):
         """Add parsing job to queue"""
         import time
         from pathlib import Path
@@ -86,7 +97,7 @@ class BackgroundParserEngine:
                     f.write(str(self.job_start_time))
             except Exception as e:
                 log.error(f"Failed to save start_time: {e}")
-        await self.queue.put({"action": "run_parsing"})
+        await self.queue.put({"action": "run_parsing", "single_server": single_server})
 
     def cancel_all_jobs(self, soft_stop=False):
         """Clear queue and propagate stop/cancel signal to active worker"""
