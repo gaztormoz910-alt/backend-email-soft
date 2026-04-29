@@ -37,13 +37,15 @@ class MxChecker(IMxChecker):
         # OrderedDict: порядок = порядок последнего использования
         self._cache: OrderedDict[str, bool] = OrderedDict()
         self._lock = asyncio.Lock()
+        # Словарь для предотвращения дублирования одновременных DNS-запросов к одному домену
+        self._inflight: dict[str, asyncio.Task] = {}
 
     async def check(self, domain: str) -> bool:
         """
         Вернуть True, если у домена есть хотя бы одна MX-запись.
 
-        Результат кэшируется (LRU, лимит 5000). Повторные запросы к тому же
-        домену не инициируют DNS-обращение.
+        Результат кэшируется (LRU, лимит). Повторные запросы к тому же
+        домену не инициируют DNS-обращение. Выполняется полностью параллельно.
         """
         domain = domain.lower().strip()
 
@@ -52,15 +54,30 @@ class MxChecker(IMxChecker):
                 # Обновляем позицию (move_to_end = «только что использован»)
                 self._cache.move_to_end(domain)
                 return self._cache[domain]
+            
+            # Если запрос к этому домену уже идёт в другом воркере, просто ждём его
+            if domain in self._inflight:
+                task = self._inflight[domain]
+            else:
+                # Запускаем проверку в фоне и сохраняем задачу
+                task = asyncio.create_task(self._resolve(domain))
+                self._inflight[domain] = task
 
-            result = await self._resolve(domain)
+        # Ожидаем результат ВНЕ БЛОКИРОВКИ, чтобы не стопорить всё приложение
+        result = await task
 
-            # Вытеснение самого старого элемента при переполнении
-            if len(self._cache) >= MX_CACHE_LIMIT:
-                self._cache.popitem(last=False)
-
-            self._cache[domain] = result
-            return result
+        async with self._lock:
+            # Чистим inflight
+            if domain in self._inflight:
+                del self._inflight[domain]
+            
+            # Сохраняем в кэш (если ещё не сохранили)
+            if domain not in self._cache:
+                if len(self._cache) >= MX_CACHE_LIMIT:
+                    self._cache.popitem(last=False)
+                self._cache[domain] = result
+                
+        return result
 
     @staticmethod
     async def _resolve(domain: str) -> bool:
