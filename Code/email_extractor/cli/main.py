@@ -202,7 +202,7 @@ async def _process_url(
 
         # Мгновенная пометка в LRU-кэше для других воркеров
         repo._cache_add(url)
-        db_url_queue.put_nowait(url)
+        await db_url_queue.put(url)
 
         stream = http.stream_lines(url)
         found = await extractor.extract_from_stream(stream, url)
@@ -214,7 +214,7 @@ async def _process_url(
                 continue
             if not await mx.check(contact.domain):
                 continue
-            db_contact_queue.put_nowait(contact)
+            await db_contact_queue.put(contact)
             added += 1
 
         if added > 0:
@@ -264,12 +264,20 @@ async def _db_writer(
                 break
             contacts_to_add = []
             urls_to_mark = []
-            while not db_url_queue.empty():
-                urls_to_mark.append(db_url_queue.get_nowait())
-                db_url_queue.task_done()
-            while not db_contact_queue.empty():
-                contacts_to_add.append(db_contact_queue.get_nowait())
-                db_contact_queue.task_done()
+            # Берем из очереди пакетами, чтобы не заблокировать writer
+            for _ in range(5000):
+                try:
+                    urls_to_mark.append(db_url_queue.get_nowait())
+                    db_url_queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
+            
+            for _ in range(5000):
+                try:
+                    contacts_to_add.append(db_contact_queue.get_nowait())
+                    db_contact_queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
 
             if urls_to_mark:
                 repo.mark_urls_processed_bulk(urls_to_mark)
@@ -397,9 +405,10 @@ async def _main_logic() -> None:
 
     # ------------------------------------------------------------------
     # Batch Writer (для SQLite)
+    # Ограничиваем размер очередей для предотвращения утечек памяти (Backpressure)
     # ------------------------------------------------------------------
-    db_contact_queue: asyncio.Queue = asyncio.Queue()
-    db_url_queue: asyncio.Queue = asyncio.Queue()
+    db_contact_queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
+    db_url_queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
 
     db_writer_task = asyncio.create_task(_db_writer(db_contact_queue, db_url_queue, repo))
 
@@ -486,7 +495,7 @@ async def _main_logic() -> None:
                     if _STOP_REQUESTED or _CANCEL_REQUESTED:
                         break
                     if await mx.check(contact.domain):
-                        db_contact_queue.put_nowait(contact)
+                        await db_contact_queue.put(contact)
                         added_comb += 1
                 msg_comb = f"✅ COMB API: +{added_comb} адресов из {len(COMB_DOMAINS)} доменов. Завершено за: {_format_time((datetime.now() - phase_start).total_seconds())}"
                 log.info(msg_comb)
@@ -567,7 +576,7 @@ async def _main_logic() -> None:
                 if _STOP_REQUESTED or _CANCEL_REQUESTED:
                     break
                 if await mx.check(contact.domain):
-                    db_contact_queue.put_nowait(contact)
+                    await db_contact_queue.put(contact)
                     added_gh += 1
 
             if added_gh > 0:
