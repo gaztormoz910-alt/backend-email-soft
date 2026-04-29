@@ -112,6 +112,8 @@ from config import (  # noqa: E402
     REQUEST_TIMEOUT,
     TXT_OUTPUT,
     DB_OUTPUT,
+    BACKEND_INDEX,
+    BACKEND_TOTAL,
 )
 
 def _source_enabled(name: str) -> bool:
@@ -385,6 +387,18 @@ async def _main_logic() -> None:
     asyncio.create_task(ws_manager.send_log("=" * 60))
     asyncio.create_task(ws_manager.send_log(msg_start))
     asyncio.create_task(ws_manager.send_log("=" * 60))
+
+    # Лог распределения работы
+    bi_label = f"#{BACKEND_INDEX}" if BACKEND_INDEX is not None else "единственный"
+    msg_dist = (
+        f"📡 Бэкенд {bi_label} | Источники: {','.join(sorted(PARSER_SOURCES))} | "
+        f"Потоков: {MAX_CONCURRENT} | "
+        f"Pipermail: {len(PIPERMAIL_SERVERS)} серв. | "
+        f"COMB: {len(COMB_DOMAINS)} дом. | "
+        f"Дорков: {len(EMAIL_DORKS)}"
+    )
+    log.info(msg_dist)
+    asyncio.create_task(ws_manager.send_log(msg_dist))
 
     # ------------------------------------------------------------------
     # Инициализация компонентов

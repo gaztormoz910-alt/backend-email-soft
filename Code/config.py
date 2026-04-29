@@ -49,7 +49,7 @@ LOCAL_SCAN_DIR: Path = OUTPUT_DIR / "Additional_files-for-check"
 FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 REQUEST_TIMEOUT: int = int(os.environ.get("REQUEST_TIMEOUT", "10"))
 MAX_MB: int = int(os.environ.get("MAX_MB", "50"))         # Макс. размер файла для потокового парсинга
-MAX_CONCURRENT: int = int(os.environ.get("MAX_CONCURRENT", "60"))
+MAX_CONCURRENT: int = int(os.environ.get("MAX_CONCURRENT", "120"))
 
 # ---------------------------------------------------------------------------
 # MX Записи
@@ -89,6 +89,24 @@ PARSER_SOURCES: set[str] = set(
 )
 
 # ---------------------------------------------------------------------------
+# Распределение работы между бэкендами
+# BACKEND_INDEX = номер этого бэкенда (0, 1, 2, 3, 4)
+# BACKEND_TOTAL = сколько всего бэкендов
+# Если не заданы — бэкенд один, берёт ВСЁ.
+# ---------------------------------------------------------------------------
+BACKEND_INDEX: int | None = (
+    int(os.environ["BACKEND_INDEX"]) if "BACKEND_INDEX" in os.environ else None
+)
+BACKEND_TOTAL: int = int(os.environ.get("BACKEND_TOTAL", "1"))
+
+
+def _my_slice(items: list, idx: int | None, total: int) -> list:
+    """Вернуть кусок списка, принадлежащий этому бэкенду."""
+    if idx is None or total <= 1:
+        return items  # один бэкенд — берём всё
+    return items[idx::total]
+
+# ---------------------------------------------------------------------------
 # Логирование
 # ---------------------------------------------------------------------------
 LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
@@ -97,33 +115,36 @@ LOG_DATE_FORMAT: str = "%H:%M:%S"
 
 # ---------------------------------------------------------------------------
 # Pipermail — список серверов (только живые, динамические)
+# Распределяются между бэкендами через BACKEND_INDEX
 # ---------------------------------------------------------------------------
-PIPERMAIL_SERVERS: list[str] = [
+_ALL_PIPERMAIL_SERVERS: list[str] = [
     "https://mail.python.org/pipermail/",
     "https://lists.ubuntu.com/archives/",
     "https://mail.gnome.org/archives/",
     "https://lists.freebsd.org/pipermail/",
 ]
+PIPERMAIL_SERVERS: list[str] = _my_slice(_ALL_PIPERMAIL_SERVERS, BACKEND_INDEX, BACKEND_TOTAL)
 
 # ---------------------------------------------------------------------------
 # HyperKitty (Mailman 3) — Fedora
 # URL формат: base + /archives/list/<listname>/
 # ---------------------------------------------------------------------------
+_ALL_HK_LISTS: list[str] = [
+    "devel@lists.fedoraproject.org",
+    "users@lists.fedoraproject.org",
+    "test@lists.fedoraproject.org",
+    "infrastructure@lists.fedoraproject.org",
+    "devel-announce@lists.fedoraproject.org",
+    "epel-devel@lists.fedoraproject.org",
+    "kernel@lists.fedoraproject.org",
+    "desktop@lists.fedoraproject.org",
+    "python-devel@lists.fedoraproject.org",
+    "server@lists.fedoraproject.org",
+]
 HYPERKITTY_SERVERS: list[dict] = [
     {
         "base": "https://lists.fedoraproject.org",
-        "lists": [
-            "devel@lists.fedoraproject.org",
-            "users@lists.fedoraproject.org",
-            "test@lists.fedoraproject.org",
-            "infrastructure@lists.fedoraproject.org",
-            "devel-announce@lists.fedoraproject.org",
-            "epel-devel@lists.fedoraproject.org",
-            "kernel@lists.fedoraproject.org",
-            "desktop@lists.fedoraproject.org",
-            "python-devel@lists.fedoraproject.org",
-            "server@lists.fedoraproject.org",
-        ],
+        "lists": _my_slice(_ALL_HK_LISTS, BACKEND_INDEX, BACKEND_TOTAL),
     },
 ]
 
@@ -132,18 +153,19 @@ HYPERKITTY_SERVERS: list[dict] = [
 # ---------------------------------------------------------------------------
 COMB_API_URL: str = os.environ.get("COMB_API_URL", "https://api.proxynova.com/comb")
 COMB_SLEEP: float = float(os.environ.get("COMB_SLEEP", "3.0"))
-COMB_DOMAINS: list[str] = [
+_ALL_COMB_DOMAINS: list[str] = [
     "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
     "mail.ru", "yandex.ru", "protonmail.com", "aol.com",
     "icloud.com", "zoho.com", "gmx.com", "fastmail.com",
     "tutanota.com", "mail.com", "inbox.ru", "list.ru",
     "bk.ru", "rambler.ru", "live.com", "msn.com",
 ]
+COMB_DOMAINS: list[str] = _my_slice(_ALL_COMB_DOMAINS, BACKEND_INDEX, BACKEND_TOTAL)
 
 # ---------------------------------------------------------------------------
 # Дорки
 # ---------------------------------------------------------------------------
-EMAIL_DORKS: list[str] = [
+_ALL_EMAIL_DORKS: list[str] = [
     'intitle:"index of" "subscribers.csv"',
     'intitle:"index of" "emails.csv"',
     'filetype:csv intext:"@" -intext:"example.com"',
@@ -156,3 +178,4 @@ EMAIL_DORKS: list[str] = [
     'site:pastebin.com "email" "password" filetype:txt',
     'site:dpaste.org intext:"@" -intext:"example"',
 ]
+EMAIL_DORKS: list[str] = _my_slice(_ALL_EMAIL_DORKS, BACKEND_INDEX, BACKEND_TOTAL)
