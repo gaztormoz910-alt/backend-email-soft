@@ -370,7 +370,7 @@ async def main() -> None:
 
 
 async def _main_logic() -> None:
-    global _STOP_REQUESTED, _CANCEL_REQUESTED, _START_TIME
+    global _START_TIME
     logging.basicConfig(
         level=getattr(logging, LOG_LEVEL, logging.INFO),
         format=LOG_FORMAT,
