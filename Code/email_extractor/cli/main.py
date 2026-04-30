@@ -521,9 +521,7 @@ async def _main_logic() -> None:
 
                 comb_task = asyncio.create_task(_run_comb())
 
-    
-            # Общий set для дедупликации URL между фазами
-            enqueued_urls: set[str] = set()
+
 
             # --------------------------------------------------------------
             # ФАЗА 2: Pipermail
@@ -539,8 +537,7 @@ async def _main_logic() -> None:
                 async for url in crawler.discover(http):
                     if _STOP_REQUESTED or _CANCEL_REQUESTED:
                         break
-                    if url not in enqueued_urls and not repo.is_url_processed(url):
-                        enqueued_urls.add(url)
+                    if not repo.is_url_processed(url):
                         await url_queue.put(url)
                         discovered_count += 1
 
@@ -567,8 +564,7 @@ async def _main_logic() -> None:
                 async for url in hk_crawler.discover(http):
                     if _STOP_REQUESTED or _CANCEL_REQUESTED:
                         break
-                    if url not in enqueued_urls and not repo.is_url_processed(url):
-                        enqueued_urls.add(url)
+                    if not repo.is_url_processed(url):
                         await url_queue.put(url)
                         hk_discovered += 1
 
@@ -620,11 +616,10 @@ async def _main_logic() -> None:
                 _spawn_workers(pbar_dork)
 
                 dork_discovered = 0
-                async for url in dork_scanner.discover(http, known_urls=enqueued_urls):
+                async for url in dork_scanner.discover(http, known_urls=set()):
                     if _STOP_REQUESTED or _CANCEL_REQUESTED:
                         break
                     if not repo.is_url_processed(url):
-                        enqueued_urls.add(url)
                         await url_queue.put(url)
                         dork_discovered += 1
 
