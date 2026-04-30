@@ -1,7 +1,10 @@
 """
 services/ddg_scanner.py
-Сканер DuckDuckGo Dorks — ищет URL через DuckDuckGo Lite без капчи,
+Сканер DuckDuckGo — ищет URL через DuckDuckGo HTML-версию без капчи,
 затем передаёт их в воркер-пул для извлечения email-адресов.
+
+Использует GET-запрос к html.duckduckgo.com/html/ — работает без JS.
+Вдохновлено theHarvester.
 """
 from __future__ import annotations
 
@@ -9,7 +12,7 @@ import asyncio
 import logging
 import re
 from typing import AsyncGenerator
-from urllib.parse import unquote
+from urllib.parse import unquote, urlencode
 
 from ..core.interfaces import ISearchDiscovery, IHttpClient
 
@@ -25,11 +28,17 @@ def _check_stop() -> bool:
         return False
 
 
+# Regex для извлечения URL из href-ов DDG HTML-версии
+# DDG оборачивает ссылки через //duckduckgo.com/l/?uddg=URL&...
+_DDG_LINK_RE = re.compile(r'uddg=([^&"\']+)')
+# Также бывают прямые ссылки в result__a
+_DIRECT_LINK_RE = re.compile(r'class="result__a"[^>]*href="([^"]+)"')
+
+
 class DDGScanner(ISearchDiscovery):
     """
-    Поиск URL через DuckDuckGo Lite.
+    Поиск URL через DuckDuckGo HTML.
     Не требует ключей, нет агрессивной капчи.
-    Вдохновлено theHarvester.
     """
 
     def __init__(
@@ -47,47 +56,50 @@ class DDGScanner(ISearchDiscovery):
         client: IHttpClient,
         known_urls: set[str] | None = None,
     ) -> AsyncGenerator[str, None]:
-        
+
         if known_urls is None:
             known_urls = set()
 
         total = len(self._dorks)
         found_total = 0
 
-        # Regex для поиска ссылок в DuckDuckGo Lite
-        url_regex = re.compile(r'class="result-url"[^>]*href=["\'](?:/l/\?uddg=)?([^"\']+)["\']')
-
         for idx, dork in enumerate(self._dorks, 1):
             if _check_stop():
                 break
 
             log.info("🦆 DDG Дорк [%d/%d]: %s", idx, total, dork)
-            urls = []
+            urls: list[str] = []
 
             try:
-                # Поиск через DuckDuckGo Lite (POST запрос)
-                # lite.duckduckgo.com/lite/ работает без JavaScript
-                response = await client.request(
-                    method="POST",
-                    url="https://lite.duckduckgo.com/lite/",
-                    data={"q": dork, "s": "0", "o": "json"},
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                        "Content-Type": "application/x-www-form-urlencoded"
-                    }
-                )
-                
-                if response:
-                    # Парсим URL
-                    matches = url_regex.findall(response)
-                    for raw_url in matches:
-                        # DuckDuckGo иногда оборачивает ссылки, нужно их декодировать
-                        clean_url = unquote(raw_url.split('&')[0])
-                        if clean_url.startswith("http") and clean_url not in urls:
-                            urls.append(clean_url)
+                # GET-запрос к DuckDuckGo HTML (не требует JS)
+                params = urlencode({"q": dork})
+                search_url = f"https://html.duckduckgo.com/html/?{params}"
+
+                raw = await client.fetch(search_url)
+                if raw:
+                    # Декодируем bytes -> str
+                    try:
+                        html = raw.decode("utf-8")
+                    except UnicodeDecodeError:
+                        html = raw.decode("latin-1", errors="replace")
+
+                    # 1. Ищем ссылки через uddg= параметр (основной формат DDG)
+                    for match in _DDG_LINK_RE.finditer(html):
+                        decoded_url = unquote(match.group(1))
+                        if decoded_url.startswith("http") and decoded_url not in urls:
+                            urls.append(decoded_url)
                             if len(urls) >= self._results_per_query:
                                 break
+
+                    # 2. Если uddg не нашли — fallback на прямые ссылки
+                    if not urls:
+                        for match in _DIRECT_LINK_RE.finditer(html):
+                            href = match.group(1)
+                            if href.startswith("http") and href not in urls:
+                                urls.append(href)
+                                if len(urls) >= self._results_per_query:
+                                    break
+
             except Exception as exc:
                 log.warning("⚠ Ошибка DDG поиска для дорка '%s': %s", dork[:40], exc)
 

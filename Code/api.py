@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from config import LOCAL_SCAN_DIR, DB_OUTPUT, FRONTEND_URL
+from config import LOCAL_SCAN_DIR, DB_OUTPUT, FRONTEND_URL, OUTPUT_DIR
 
 from email_extractor.infrastructure.sqlite_repository import SqliteContactRepository
 import email_extractor.cli.main as core_main
