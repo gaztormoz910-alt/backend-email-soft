@@ -266,15 +266,15 @@ async def _db_writer(
                 break
             contacts_to_add = []
             urls_to_mark = []
-            # Берем из очереди пакетами, чтобы не заблокировать writer
-            for _ in range(5000):
+            # Берем из очереди пакетами (макс 1000 за раз — экономим RAM)
+            for _ in range(1000):
                 try:
                     urls_to_mark.append(db_url_queue.get_nowait())
                     db_url_queue.task_done()
                 except asyncio.QueueEmpty:
                     break
             
-            for _ in range(5000):
+            for _ in range(1000):
                 try:
                     contacts_to_add.append(db_contact_queue.get_nowait())
                     db_contact_queue.task_done()
@@ -294,6 +294,9 @@ async def _db_writer(
                 
                 if added > 0:
                     asyncio.create_task(ws_manager.send_count(repo.get_count()))
+
+            # Явно освобождаем списки, чтобы GC не ждал следующего цикла
+            del contacts_to_add, urls_to_mark
 
             # Периодический GC + мониторинг памяти (каждые ~12 сек)
             gc_counter += 1
@@ -423,8 +426,8 @@ async def _main_logic() -> None:
     # Batch Writer (для SQLite)
     # Ограничиваем размер очередей для предотвращения утечек памяти (Backpressure)
     # ------------------------------------------------------------------
-    db_contact_queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
-    db_url_queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
+    db_contact_queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
+    db_url_queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
 
     db_writer_task = asyncio.create_task(_db_writer(db_contact_queue, db_url_queue, repo))
     comb_task = None
@@ -473,8 +476,8 @@ async def _main_logic() -> None:
         async with AsyncHttpClient(
             timeout=REQUEST_TIMEOUT,
             max_mb=MAX_MB,
-            max_connections=MAX_CONCURRENT * 2,
-            max_keepalive=MAX_CONCURRENT,
+            max_connections=MAX_CONCURRENT + 20,
+            max_keepalive=MAX_CONCURRENT // 2,
         ) as http:
 
             # --------------------------------------------------------------
