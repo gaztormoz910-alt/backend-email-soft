@@ -177,5 +177,9 @@ _ALL_EMAIL_DORKS: list[str] = [
     'site:pastebin.com intext:"@yahoo.com" intext:"@"',
     'site:pastebin.com "email" "password" filetype:txt',
     'site:dpaste.org intext:"@" -intext:"example"',
+    'site:ghostbin.co intext:"@gmail.com"',
+    'site:ghostbin.co "email" "password"',
+    'site:rentry.co intext:"@yahoo.com"',
+    'site:rentry.co "combo" "@"',
 ]
 EMAIL_DORKS: list[str] = _my_slice(_ALL_EMAIL_DORKS, BACKEND_INDEX, BACKEND_TOTAL)

@@ -129,6 +129,7 @@ from email_extractor.services.mx_checker import MxChecker
 from email_extractor.services.pipermail_crawler import PipermailCrawler
 from email_extractor.services.comb_scanner import CombApiScanner
 from email_extractor.services.dork_scanner import DorkScanner
+from email_extractor.services.ddg_scanner import DDGScanner
 from email_extractor.services.hyperkitty_crawler import HyperKittyCrawler
 from websocket_manager import ws_manager
 
@@ -605,20 +606,33 @@ async def _main_logic() -> None:
             # ФАЗА 4: Google Dorks
             # --------------------------------------------------------------
             if _source_enabled("dorks") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and EMAIL_DORKS:
-                log.info("\n🔍 ЭТАП 4: Google Dorks (%d запросов)", len(EMAIL_DORKS))
+                log.info("\n🔍 ЭТАП 4: Поисковые Dorks (%d запросов)", len(EMAIL_DORKS))
                 phase_start = datetime.now()
-                asyncio.create_task(ws_manager.send_log(f"🔍 ЭТАП 4: Google Dorks — {len(EMAIL_DORKS)} поисковых запросов..."))
+                asyncio.create_task(ws_manager.send_log(f"🔍 ЭТАП 4: Google & DuckDuckGo Dorks — {len(EMAIL_DORKS)} поисковых запросов..."))
 
+                pbar_dork = async_tqdm(desc="Обработка Dork-URL", unit="стр", position=0, total=None)
+                _spawn_workers(pbar_dork)
+                dork_discovered = 0
+
+                # 1. DuckDuckGo Scanner (без капчи, работает стабильно)
+                ddg_scanner = DDGScanner(
+                    dorks=EMAIL_DORKS,
+                    results_per_query=DORK_RESULTS_PER_QUERY,
+                    sleep_between=DORK_SLEEP,
+                )
+                async for url in ddg_scanner.discover(http, known_urls=set()):
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                        break
+                    if not repo.is_url_processed(url):
+                        await url_queue.put(url)
+                        dork_discovered += 1
+
+                # 2. Google Scanner (резерв)
                 dork_scanner = DorkScanner(
                     dorks=EMAIL_DORKS,
                     results_per_query=DORK_RESULTS_PER_QUERY,
                     sleep_between=DORK_SLEEP,
                 )
-
-                pbar_dork = async_tqdm(desc="Обработка Dork-URL", unit="стр", position=0, total=None)
-                _spawn_workers(pbar_dork)
-
-                dork_discovered = 0
                 async for url in dork_scanner.discover(http, known_urls=set()):
                     if _STOP_REQUESTED or _CANCEL_REQUESTED:
                         break
@@ -629,7 +643,7 @@ async def _main_logic() -> None:
                 await url_queue.join()
                 pbar_dork.close()
 
-                msg_dork = f"✅ Google Dorks: обработано {dork_discovered} URL. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
+                msg_dork = f"✅ Dorks (Google+DDG): обработано {dork_discovered} URL. Этап: {_format_time((datetime.now() - phase_start).total_seconds())}"
                 log.info(msg_dork)
                 asyncio.create_task(ws_manager.send_log(msg_dork))
 
