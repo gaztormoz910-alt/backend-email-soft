@@ -17,8 +17,8 @@ class Contact:
         last_name:  Фамилия (может быть пустой строкой).
     """
     email: str
-    first_name: str = field(default="")
-    last_name: str = field(default="")
+    first_name: str | None = field(default=None)
+    last_name: str | None = field(default=None)
 
     # ------------------------------------------------------------------
     # Дополнительные конструкторы
@@ -30,12 +30,14 @@ class Contact:
         return cls(email=email.lower().strip())
 
     @classmethod
-    def from_tuple(cls, first: str, last: str, email: str) -> "Contact":
+    def from_tuple(cls, first: str | None, last: str | None, email: str) -> "Contact":
         """Удобный конструктор из тройки (first, last, email)."""
+        first_clean = first.strip() if first and first.strip() else None
+        last_clean = last.strip() if last and last.strip() else None
         return cls(
             email=email.lower().strip(),
-            first_name=first.strip(),
-            last_name=last.strip(),
+            first_name=first_clean,
+            last_name=last_clean,
         )
 
     # ------------------------------------------------------------------

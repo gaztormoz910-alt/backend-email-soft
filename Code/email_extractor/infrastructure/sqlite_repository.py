@@ -45,10 +45,10 @@ class SqliteContactRepository:
 
             self._conn.execute("""
                 CREATE TABLE IF NOT EXISTS contacts (
-                    email TEXT KEY,
+                    email TEXT PRIMARY KEY,
                     first_name TEXT,
                     last_name TEXT
-                )
+                ) WITHOUT ROWID
             """)
             self._conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_email ON contacts(email)"
@@ -58,7 +58,7 @@ class SqliteContactRepository:
             self._conn.execute("""
                 CREATE TABLE IF NOT EXISTS processed_urls (
                     url TEXT PRIMARY KEY
-                )
+                ) WITHOUT ROWID
             """)
 
     def _cache_add(self, url: str) -> None:

@@ -72,14 +72,14 @@ def is_fake_email(email: str) -> bool:
     return False
 
 
-def split_name(full: str) -> tuple[str, str]:
-    """Разбить полное имя на (first, last). При неудаче вернуть ('', '')."""
+def split_name(full: str) -> tuple[str | None, str | None]:
+    """Разбить полное имя на (first, last). При неудаче вернуть (None, None)."""
     full = re.sub(r'["""\'\(\)\[\]]', '', full).strip()
     if not full or len(full) > 60 or any(c in full for c in '@<>{}'):
-        return "", ""
+        return None, None
     parts = full.split()
     first = parts[0].capitalize()
-    last = parts[-1].capitalize() if len(parts) > 1 else ""
+    last = parts[-1].capitalize() if len(parts) > 1 else None
     return first, last
 
 
