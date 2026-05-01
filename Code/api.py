@@ -237,9 +237,12 @@ async def download_info():
 
 @app.get("/emails/json")
 async def get_emails_json():
-    """Возвращает все email как JSON-массив (для кросс-бэкенд дедупликации)."""
+    """Возвращает все email как потоковый JSON-массив (для кросс-бэкенд дедупликации)."""
     repo = SqliteContactRepository(db_path=DB_OUTPUT)
-    return {"emails": repo.get_all_emails(), "count": repo.get_count()}
+    return StreamingResponse(
+        repo.stream_all_emails_json(),
+        media_type="application/json"
+    )
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

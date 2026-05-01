@@ -165,6 +165,37 @@ class SqliteContactRepository:
             cursor.execute("SELECT email FROM contacts ORDER BY email")
             return [row[0] for row in cursor.fetchall()]
 
+    def stream_all_emails_json(self):
+        """
+        Потоковая генерация JSON-массива со всеми email-адресами.
+        Защищает от Out-Of-Memory (OOM) при миллионах записей.
+        Формат вывода: {"count": N, "emails": ["a@b.com", "c@d.com", ...]}
+        """
+        with self._lock:
+            cursor = self._conn.execute("SELECT COUNT(*) FROM contacts")
+            total = cursor.fetchone()[0]
+            
+            yield f'{{"count": {total}, "emails": ['
+            
+            cursor = self._conn.execute("SELECT email FROM contacts")
+            first = True
+            while True:
+                rows = cursor.fetchmany(5000)
+                if not rows:
+                    break
+                
+                for row in rows:
+                    email = row[0]
+                    # Быстрый escape для JSON
+                    email_json = f'"{email}"'
+                    if first:
+                        yield email_json
+                        first = False
+                    else:
+                        yield f',{email_json}'
+            
+            yield ']}'
+
     # ------------------------------------------------------------------
     # Processed URLs checkpoint (LRU-кэш + SQLite fallback)
     # ------------------------------------------------------------------
