@@ -255,30 +255,44 @@ async def websocket_endpoint(websocket: WebSocket):
 async def reconfigure_backend(backend_index: int = Form(0), backend_total: int = Form(1)):
     """
     Динамическое перераспределение работы между живыми бэкендами.
-    Фронтенд вызывает этот эндпоинт, когда обнаруживает, что один из серверов
-    вышел из строя (нулевой баланс Railway). Каждому живому серверу
-    присваивается новый backend_index / backend_total, и данные
-    перераспределяются без дубликатов.
+    
+    Фронтенд вызывает этот эндпоинт перед стартом парсинга.
+    Он определяет, какие серверы живы, и раздаёт каждому:
+      - backend_index: порядковый номер среди живых
+      - backend_total: сколько всего живых серверов
+    
+    Каждый живой сервер получает ВСЕ типы источников (PARSER_SOURCES = all),
+    но парсит только СВОЙ слайс данных из каждого источника.
+    Это гарантирует, что при смерти одного сервера его данные
+    автоматически перераспределятся между оставшимися.
     """
     import config
+    
+    # 1. Каждый живой сервер берёт ВСЕ типы источников
+    config.PARSER_SOURCES = {"pipermail", "hyperkitty", "comb", "github", "dorks"}
+    
+    # 2. Но парсит только СВОЙ слайс данных
     config.BACKEND_INDEX = backend_index
     config.BACKEND_TOTAL = backend_total
-
     config.PIPERMAIL_SERVERS = config._my_slice(config._ALL_PIPERMAIL_SERVERS, backend_index, backend_total)
     config.HYPERKITTY_SERVERS[0]["lists"] = config._my_slice(config._ALL_HK_LISTS, backend_index, backend_total)
     config.COMB_DOMAINS = config._my_slice(config._ALL_COMB_DOMAINS, backend_index, backend_total)
     config.EMAIL_DORKS = config._my_slice(config._ALL_EMAIL_DORKS, backend_index, backend_total)
 
     log.info(
-        f"[RECONFIG] Бэкенд переконфигурирован: index={backend_index}, total={backend_total}, "
-        f"pipermail={len(config.PIPERMAIL_SERVERS)}, dorks={len(config.EMAIL_DORKS)}, "
-        f"comb={len(config.COMB_DOMAINS)}"
+        f"[RECONFIG] Бэкенд переконфигурирован: index={backend_index}/{backend_total}, "
+        f"sources=ALL, pipermail={len(config.PIPERMAIL_SERVERS)}, "
+        f"dorks={len(config.EMAIL_DORKS)}, comb={len(config.COMB_DOMAINS)}, "
+        f"hk_lists={len(config.HYPERKITTY_SERVERS[0]['lists'])}"
     )
     return {
         "status": "ok",
         "backend_index": backend_index,
         "backend_total": backend_total,
+        "sources": list(config.PARSER_SOURCES),
         "pipermail_count": len(config.PIPERMAIL_SERVERS),
         "dork_count": len(config.EMAIL_DORKS),
         "comb_domain_count": len(config.COMB_DOMAINS),
+        "hk_list_count": len(config.HYPERKITTY_SERVERS[0]["lists"]),
     }
+
