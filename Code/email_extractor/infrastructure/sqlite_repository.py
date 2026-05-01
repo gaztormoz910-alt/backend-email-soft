@@ -217,6 +217,14 @@ class SqliteContactRepository:
             cursor = self._conn.execute("SELECT COUNT(*) FROM processed_urls")
             return cursor.fetchone()[0]
 
+    def has_names(self) -> bool:
+        """Проверить, есть ли хотя бы одна запись с именем или фамилией (не NULL)."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT 1 FROM contacts WHERE first_name IS NOT NULL OR last_name IS NOT NULL LIMIT 1"
+            )
+            return cursor.fetchone() is not None
+
     def clear_processed_urls(self) -> None:
         """Очистить таблицу обработанных URL (при отмене / новом запуске)."""
         self._processed_urls_cache.clear()

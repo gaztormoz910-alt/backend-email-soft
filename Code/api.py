@@ -224,6 +224,7 @@ async def download_info():
     """Возвращает информацию о файле для прогресс-бара скачивания"""
     repo = SqliteContactRepository(db_path=DB_OUTPUT)
     count = repo.get_count()
+    has_names = repo.has_names()
     # Оценка размера: ~25 байт на email для TXT, ~40 для CSV
     avg_email_len = 25
     avg_csv_line_len = 40
@@ -231,6 +232,7 @@ async def download_info():
         "email_count": count,
         "estimated_txt_bytes": count * avg_email_len,
         "estimated_csv_bytes": count * avg_csv_line_len + 30,  # +header
+        "has_names": has_names,
     }
 
 @app.get("/emails/json")
@@ -247,3 +249,36 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
     except WebSocketDisconnect:
         parser_engine.disconnect(websocket)
+
+
+@app.post("/reconfigure")
+async def reconfigure_backend(backend_index: int = Form(0), backend_total: int = Form(1)):
+    """
+    Динамическое перераспределение работы между живыми бэкендами.
+    Фронтенд вызывает этот эндпоинт, когда обнаруживает, что один из серверов
+    вышел из строя (нулевой баланс Railway). Каждому живому серверу
+    присваивается новый backend_index / backend_total, и данные
+    перераспределяются без дубликатов.
+    """
+    import config
+    config.BACKEND_INDEX = backend_index
+    config.BACKEND_TOTAL = backend_total
+
+    config.PIPERMAIL_SERVERS = config._my_slice(config._ALL_PIPERMAIL_SERVERS, backend_index, backend_total)
+    config.HYPERKITTY_SERVERS[0]["lists"] = config._my_slice(config._ALL_HK_LISTS, backend_index, backend_total)
+    config.COMB_DOMAINS = config._my_slice(config._ALL_COMB_DOMAINS, backend_index, backend_total)
+    config.EMAIL_DORKS = config._my_slice(config._ALL_EMAIL_DORKS, backend_index, backend_total)
+
+    log.info(
+        f"[RECONFIG] Бэкенд переконфигурирован: index={backend_index}, total={backend_total}, "
+        f"pipermail={len(config.PIPERMAIL_SERVERS)}, dorks={len(config.EMAIL_DORKS)}, "
+        f"comb={len(config.COMB_DOMAINS)}"
+    )
+    return {
+        "status": "ok",
+        "backend_index": backend_index,
+        "backend_total": backend_total,
+        "pipermail_count": len(config.PIPERMAIL_SERVERS),
+        "dork_count": len(config.EMAIL_DORKS),
+        "comb_domain_count": len(config.COMB_DOMAINS),
+    }
