@@ -157,21 +157,53 @@ def fix_domain_typo(email: str) -> str:
 # ---------------------------------------------------------------------------
 
 def is_fake_email(email: str) -> bool:
-    """Вернуть True, если email выглядит как заглушка / тестовый / ролевой адрес."""
+    """Вернуть True, если email выглядит как заглушка / мусор / SSH-ключ / патч."""
     e = email.lower().strip()
     if e in _IGNORED_EMAILS or len(e) < 6 or "@" not in e:
         return True
+    
     local, _, domain = e.partition("@")
+    
+    # Слишком короткий или мусорный локал (например, `_`, `___---`, `a14`)
+    if len(local) < 3 and not local.isalpha():
+        return True
+    if not any(c.isalpha() for c in local): # Нет букв (только цифры и символы `_---`)
+        return True
+        
     if len(domain) < 3:
         return True
-    if domain in _FAKE_DOMAINS:
+    if domain in _FAKE_DOMAINS or domain.startswith(("lists.", "list.", "groups.")):
         return True
+        
+    # Блокировка доменов с криптографией / системным кодом
+    if domain in ("openssh.com", "libssh.org", "fedoraproject.org", "centos.org", "redhat.com", "pagure.io", "github.com", "gitlab.com"):
+        return True
+
     # Ролевые/технические адреса (info@, admin@, support@ и т.д.)
     if local in ROLE_PREFIXES:
         return True
+
+    # Блокировка криптографических алгоритмов и патчей (SSH, SSL)
+    crypto_prefixes = ("aes", "chacha", "ecdsa", "sk-ssh", "sk-ecdsa", "hmac", "umac", "rsa-sha", "sntrup", "ssh-ed")
+    if local.startswith(crypto_prefixes):
+        return True
+        
+    # Блокировка технических ID коммитов / UUID / патчей Linux (очень длинные локальные части с кучей цифр)
+    if len(local) > 25 and (local.count("-") >= 3 or local.count(".") >= 2) and sum(c.isdigit() for c in local) > 8:
+        return True
+        
+    # Блокировка зацикленных / сгенерированных строк (например: anna-anna-anna, alex-alex-alex)
+    import re
+    # Если слово повторяется 3 и более раз (например alex-alex-alex)
+    parts = re.split(r'[-._]', local)
+    parts = [p for p in parts if p]
+    if len(parts) >= 3 and len(set(parts)) == 1:
+        return True
+
     # Один regex вместо цикла из 11 — быстрее в ~5-10 раз
     if _FAKE_LOCAL_RE.match(e):
         return True
+        
     return False
 
 
