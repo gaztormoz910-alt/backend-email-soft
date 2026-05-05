@@ -78,7 +78,7 @@ class CombApiScanner:
         for domain in self._domains:
             for prefix in prefixes:
                 if _check_stop():
-                    return list(contacts.values())
+                    return
                 current_query += 1
                 try:
                     query = f"{prefix}@{domain}"
