@@ -114,6 +114,14 @@ from config import (  # noqa: E402
     DB_OUTPUT,
     BACKEND_INDEX,
     BACKEND_TOTAL,
+    SHODAN_API_KEY,
+    SHODAN_QUERIES,
+    PASTEBIN_SCRAPE_URL,
+    DEHASHED_API_KEY,
+    DEHASHED_USERNAME,
+    SNUSBASE_API_KEY,
+    GRAYHAT_API_KEY,
+    HIBP_API_KEY,
 )
 
 def _source_enabled(name: str) -> bool:
@@ -124,7 +132,6 @@ from email_extractor.infrastructure.sqlite_repository import SqliteContactReposi
 from email_extractor.infrastructure.http_client import AsyncHttpClient
 from email_extractor.services.email_extractor import EmailExtractorService, is_fake_email
 from email_extractor.services.email_extractor import TRUSTED_DOMAINS, fix_domain_typo
-from email_extractor.core.entities import Contact
 from email_extractor.services.github_scanner import GitHubScanner
 from email_extractor.services.local_file_scanner import LocalFileScanner
 from email_extractor.services.mx_checker import MxChecker
@@ -133,6 +140,11 @@ from email_extractor.services.comb_scanner import CombApiScanner
 from email_extractor.services.dork_scanner import DorkScanner
 from email_extractor.services.ddg_scanner import DDGScanner
 from email_extractor.services.hyperkitty_crawler import HyperKittyCrawler
+from email_extractor.services.shodan_scanner import ShodanScanner
+from email_extractor.services.pastebin_scanner import PastebinScanner
+from email_extractor.services.dehashed_scanner import DehashedScanner
+from email_extractor.services.snusbase_scanner import SnusbaseScanner
+from email_extractor.services.grayhat_scanner import GrayhatScanner
 from websocket_manager import ws_manager
 
 # ---------------------------------------------------------------------------
@@ -612,6 +624,64 @@ async def _main_logic() -> None:
                     msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
                     log.info(msg_gh)
                     asyncio.create_task(ws_manager.send_log(msg_gh))
+
+            # --------------------------------------------------------------
+            # ФАЗА 3.1: OSINT API (Shodan, GrayHat, Pastebin, DeHashed, Snusbase)
+            # --------------------------------------------------------------
+            if _source_enabled("shodan") and SHODAN_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n📡 ЭТАП 3.1: Shodan")
+                shodan_scanner = ShodanScanner(api_key=SHODAN_API_KEY, queries=SHODAN_QUERIES)
+                sh_contacts = await shodan_scanner.scan(http)
+                added_sh = 0
+                for contact in sh_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_sh += 1
+
+            if _source_enabled("grayhat") and GRAYHAT_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n☁ ЭТАП 3.2: GrayHatWarfare (S3 Buckets)")
+                grayhat_scanner = GrayhatScanner(api_key=GRAYHAT_API_KEY)
+                ghw_contacts = await grayhat_scanner.scan(http)
+                added_ghw = 0
+                for contact in ghw_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_ghw += 1
+
+            if _source_enabled("pastebin") and PASTEBIN_SCRAPE_URL and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n📝 ЭТАП 3.3: Pastebin Scraping API")
+                pastebin_scanner = PastebinScanner(api_url=PASTEBIN_SCRAPE_URL)
+                pb_contacts = await pastebin_scanner.scan(http)
+                added_pb = 0
+                for contact in pb_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_pb += 1
+
+            if _source_enabled("dehashed") and DEHASHED_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n🗄 ЭТАП 3.4: DeHashed API")
+                dehashed_scanner = DehashedScanner(api_key=DEHASHED_API_KEY, username=DEHASHED_USERNAME)
+                dh_contacts = await dehashed_scanner.scan(http)
+                added_dh = 0
+                for contact in dh_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_dh += 1
+
+            if _source_enabled("snusbase") and SNUSBASE_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n🗄 ЭТАП 3.5: Snusbase API")
+                snusbase_scanner = SnusbaseScanner(api_key=SNUSBASE_API_KEY)
+                sb_contacts = await snusbase_scanner.scan(http)
+                added_sb = 0
+                for contact in sb_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_sb += 1
 
             # --------------------------------------------------------------
             # ФАЗА 4: Google Dorks
