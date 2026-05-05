@@ -534,9 +534,8 @@ async def _main_logic() -> None:
                         domains=COMB_DOMAINS,
                         sleep_between=COMB_SLEEP,
                     )
-                    comb_contacts = await comb.scan(http)
                     added_comb = 0
-                    for contact in comb_contacts:
+                    async for contact in comb.scan(http):
                         if _STOP_REQUESTED or _CANCEL_REQUESTED:
                             break
                         if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):

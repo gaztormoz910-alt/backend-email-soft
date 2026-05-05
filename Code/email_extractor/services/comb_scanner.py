@@ -67,8 +67,10 @@ class CombApiScanner:
             "test", "user", "mail", "web", "pro", "master", "dev", "app", "system"
         ]
 
-    async def scan(self, client: AsyncHttpClient) -> list[Contact]:
-        contacts: dict[str, Contact] = {}
+    from typing import AsyncGenerator
+
+    async def scan(self, client: AsyncHttpClient) -> AsyncGenerator[Contact, None]:
+        seen_emails: set[str] = set()
         prefixes = self._get_prefixes()
         total_queries = len(self._domains) * len(prefixes)
         current_query = 0
@@ -108,9 +110,14 @@ class CombApiScanner:
                         m = EMAIL_RE.search(line)
                         if m:
                             e = m.group(0).lower()
-                            if not is_fake_email(e) and e not in contacts:
-                                contacts[e] = Contact.from_email_only(e)
+                            if not is_fake_email(e) and e not in seen_emails:
+                                seen_emails.add(e)
+                                yield Contact.from_email_only(e)
                                 batch_added += 1
+                                
+                                # Защита от переполнения RAM: чистим локальный кэш
+                                if len(seen_emails) > 500000:
+                                    seen_emails.clear()
 
                     if batch_added > 0:
                         msg = f"   🎯 COMB {query}: +{batch_added} email"
@@ -129,5 +136,4 @@ class CombApiScanner:
 
                 await asyncio.sleep(self._sleep)
 
-        log.info("🔓 COMB API: найдено %d уникальных email из %d запросов", len(contacts), total_queries)
-        return list(contacts.values())
+        log.info("🔓 COMB API: завершено сканирование %d запросов", total_queries)
