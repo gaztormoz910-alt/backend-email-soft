@@ -42,6 +42,10 @@ class SqliteContactRepository:
             # WAL-режим: быстрее для частых INSERT и параллельных чтений
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
+            # Оптимизация производительности:
+            self._conn.execute("PRAGMA cache_size=-4000")     # 4000 KB кэш (~4MB) вместо дефолтных 2MB
+            self._conn.execute("PRAGMA temp_store=MEMORY")    # temp-таблицы в RAM вместо диска
+            self._conn.execute("PRAGMA mmap_size=67108864")   # 64MB mmap для быстрого чтения
 
             self._conn.execute("""
                 CREATE TABLE IF NOT EXISTS contacts (

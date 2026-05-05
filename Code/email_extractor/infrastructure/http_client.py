@@ -109,8 +109,8 @@ class AsyncHttpClient(IHttpClient):
                     return
                 bytes_read = 0
                 async for line in r.aiter_lines():
-                    # Приблизительная оценка прочитанных байт
-                    bytes_read += len(line.encode('utf-8', errors='ignore'))
+                    # Быстрая оценка: len(str) вместо len(str.encode()) — без аллокации bytes-объекта
+                    bytes_read += len(line)
                     if bytes_read > self._max_bytes:
                         log.debug("⚠ Прервано потоковое чтение %s: превышен %d МБ", url, self._max_bytes // (1024 * 1024))
                         break

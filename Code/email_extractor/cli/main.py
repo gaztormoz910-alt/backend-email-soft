@@ -123,6 +123,7 @@ from email_extractor.core.entities import Contact
 from email_extractor.infrastructure.sqlite_repository import SqliteContactRepository
 from email_extractor.infrastructure.http_client import AsyncHttpClient
 from email_extractor.services.email_extractor import EmailExtractorService, is_fake_email
+from email_extractor.services.email_extractor import TRUSTED_DOMAINS
 from email_extractor.services.github_scanner import GitHubScanner
 from email_extractor.services.local_file_scanner import LocalFileScanner
 from email_extractor.services.mx_checker import MxChecker
@@ -215,8 +216,10 @@ async def _process_url(
             e = contact.email
             if not e or is_fake_email(e):
                 continue
-            if not await mx.check(contact.domain):
-                continue
+            # Пропуск MX для крупных провайдеров — экономит тысячи DNS-запросов
+            if contact.domain not in TRUSTED_DOMAINS:
+                if not await mx.check(contact.domain):
+                    continue
             await db_contact_queue.put(contact)
             added += 1
 
@@ -267,15 +270,15 @@ async def _db_writer(
                 break
             contacts_to_add = []
             urls_to_mark = []
-            # Берем из очереди пакетами (макс 1000 за раз — экономим RAM)
-            for _ in range(1000):
+            # Берем из очереди пакетами (макс 2000 за раз — баланс RAM и скорости)
+            for _ in range(2000):
                 try:
                     urls_to_mark.append(db_url_queue.get_nowait())
                     db_url_queue.task_done()
                 except asyncio.QueueEmpty:
                     break
             
-            for _ in range(1000):
+            for _ in range(2000):
                 try:
                     contacts_to_add.append(db_contact_queue.get_nowait())
                     db_contact_queue.task_done()
@@ -296,15 +299,16 @@ async def _db_writer(
                 if added > 0:
                     asyncio.create_task(ws_manager.send_count(repo.get_count()))
 
-            # Явно освобождаем списки, чтобы GC не ждал следующего цикла
+            # Явно освобождаем списки
             del contacts_to_add, urls_to_mark
 
-            # Периодический GC + мониторинг памяти (каждые ~12 сек)
+            # GC + мониторинг памяти каждые ~30 сек (150 * 0.2s)
+            # Реже = меньше CPU-пауз. Python GC и так справляется.
             gc_counter += 1
-            if gc_counter >= 60:  # 60 * 0.2s = 12 сек
+            if gc_counter >= 150:
                 gc_counter = 0
                 gc.collect()
-                repo.truncate_wal()  # Очищаем WAL-файл, чтобы Railway не считал его за оперативную память
+                repo.truncate_wal()
                 mem_mb = _get_memory_mb()
                 if mem_mb > 0:
                     if mem_mb > MEMORY_LIMIT_MB:
@@ -516,7 +520,7 @@ async def _main_logic() -> None:
                     for contact in comb_contacts:
                         if _STOP_REQUESTED or _CANCEL_REQUESTED:
                             break
-                        if await mx.check(contact.domain):
+                        if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
                             await db_contact_queue.put(contact)
                             added_comb += 1
                     msg_comb = f"✅ COMB API: +{added_comb} адресов из {len(COMB_DOMAINS)} доменов. Завершено за: {_format_time((datetime.now() - phase_start).total_seconds())}"
@@ -593,7 +597,7 @@ async def _main_logic() -> None:
                 for contact in gh_contacts:
                     if _STOP_REQUESTED or _CANCEL_REQUESTED:
                         break
-                    if await mx.check(contact.domain):
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
                         await db_contact_queue.put(contact)
                         added_gh += 1
 
