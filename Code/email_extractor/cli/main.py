@@ -123,7 +123,8 @@ from email_extractor.core.entities import Contact
 from email_extractor.infrastructure.sqlite_repository import SqliteContactRepository
 from email_extractor.infrastructure.http_client import AsyncHttpClient
 from email_extractor.services.email_extractor import EmailExtractorService, is_fake_email
-from email_extractor.services.email_extractor import TRUSTED_DOMAINS
+from email_extractor.services.email_extractor import TRUSTED_DOMAINS, fix_domain_typo
+from email_extractor.core.entities import Contact
 from email_extractor.services.github_scanner import GitHubScanner
 from email_extractor.services.local_file_scanner import LocalFileScanner
 from email_extractor.services.mx_checker import MxChecker
@@ -214,7 +215,13 @@ async def _process_url(
         added = 0
         for contact in found:
             e = contact.email
-            if not e or is_fake_email(e):
+            if not e:
+                continue
+            # Коррекция опечаток: gmal.com → gmail.com, hotmal.com → hotmail.com
+            fixed = fix_domain_typo(e)
+            if fixed != e:
+                contact = Contact.from_email_only(fixed)
+            if is_fake_email(contact.email):
                 continue
             # Пропуск MX для крупных провайдеров — экономит тысячи DNS-запросов
             if contact.domain not in TRUSTED_DOMAINS:

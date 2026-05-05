@@ -54,6 +54,44 @@ _FAKE_DOMAINS: frozenset[str] = frozenset({
 }) | DISPOSABLE_DOMAINS  # + 300+ одноразовых доменов из blocklist
 
 # ---------------------------------------------------------------------------
+# Коррекция опечаток в доменах — спасает валидные email от потери
+# ---------------------------------------------------------------------------
+DOMAIN_TYPOS: dict[str, str] = {
+    # Gmail
+    "gmal.com": "gmail.com", "gmial.com": "gmail.com",
+    "gmaill.com": "gmail.com", "gmai.com": "gmail.com",
+    "gamil.com": "gmail.com", "gnail.com": "gmail.com",
+    "gmail.co": "gmail.com", "gmail.cm": "gmail.com",
+    "gmail.con": "gmail.com", "gmail.om": "gmail.com",
+    "gmaul.com": "gmail.com", "gmali.com": "gmail.com",
+    "gemail.com": "gmail.com", "gimail.com": "gmail.com",
+    # Outlook
+    "outlok.com": "outlook.com", "outllook.com": "outlook.com",
+    "outook.com": "outlook.com", "outlool.com": "outlook.com",
+    "outlook.co": "outlook.com", "outlook.cm": "outlook.com",
+    "outlook.con": "outlook.com",
+    # Hotmail
+    "hotmal.com": "hotmail.com", "hotmial.com": "hotmail.com",
+    "hotmail.co": "hotmail.com", "hotmail.cm": "hotmail.com",
+    "hotmail.con": "hotmail.com", "hotmil.com": "hotmail.com",
+    "hotmaill.com": "hotmail.com", "hotamil.com": "hotmail.com",
+    # Yahoo
+    "yaho.com": "yahoo.com", "yahooo.com": "yahoo.com",
+    "yahoo.co": "yahoo.com", "yahoo.cm": "yahoo.com",
+    "yahoo.con": "yahoo.com", "yhoo.com": "yahoo.com",
+    "yhaoo.com": "yahoo.com",
+    # Mail.ru
+    "mail.r": "mail.ru", "mai.ru": "mail.ru",
+    "maill.ru": "mail.ru", "mal.ru": "mail.ru",
+    # Yandex
+    "yandex.r": "yandex.ru", "yanex.ru": "yandex.ru",
+    "yadex.ru": "yandex.ru",
+    # Прочие частые опечатки
+    "icloud.co": "icloud.com", "icloud.con": "icloud.com",
+    "protonmail.co": "protonmail.com",
+}
+
+# ---------------------------------------------------------------------------
 # Whitelist доменов крупных провайдеров — MX-проверка для них не нужна,
 # экономит тысячи DNS-запросов и ускоряет пайплайн в разы
 # ---------------------------------------------------------------------------
@@ -71,13 +109,19 @@ TRUSTED_DOMAINS: frozenset[str] = frozenset({
     "icloud.com", "me.com", "mac.com",
     # AOL
     "aol.com",
-    # ProtonMail
+    # ProtonMail / Tuta
     "protonmail.com", "proton.me", "pm.me",
-    # Европа
+    "tutanota.com", "tuta.io", "tuta.com",
+    # Европа — Германия
     "gmx.com", "gmx.de", "gmx.net", "gmx.at",
-    "web.de", "t-online.de",
-    "orange.fr", "laposte.net", "free.fr", "sfr.fr",
-    "libero.it", "virgilio.it",
+    "web.de", "t-online.de", "freenet.de",
+    # Европа — Франция
+    "orange.fr", "laposte.net", "free.fr", "sfr.fr", "wanadoo.fr",
+    # Европа — Великобритания
+    "btinternet.com", "sky.com", "virginmedia.com",
+    # Европа — Италия
+    "libero.it", "virgilio.it", "alice.it", "tiscali.it",
+    # Европа — Польша / Чехия / Болгария
     "wp.pl", "onet.pl", "interia.pl", "o2.pl",
     "seznam.cz", "abv.bg",
     # СНГ
@@ -87,11 +131,25 @@ TRUSTED_DOMAINS: frozenset[str] = frozenset({
     "ukr.net", "i.ua", "meta.ua",
     # США ISP
     "comcast.net", "verizon.net", "att.net",
-    "sbcglobal.net", "cox.net", "charter.net",
+    "sbcglobal.net", "bellsouth.net",
+    "cox.net", "charter.net",
+    # Канада
+    "rogers.com", "sympatico.ca", "bell.net",
+    "shaw.ca", "videotron.ca", "telus.net",
     # Прочие
-    "zoho.com", "fastmail.com",
-    "tutanota.com", "tuta.io", "mail.com",
+    "zoho.com", "fastmail.com", "mail.com",
 })
+
+
+def fix_domain_typo(email: str) -> str:
+    """Исправить опечатку в домене, если она есть. Возвращает исправленный email."""
+    local, sep, domain = email.partition("@")
+    if not sep:
+        return email
+    fixed = DOMAIN_TYPOS.get(domain)
+    if fixed:
+        return f"{local}@{fixed}"
+    return email
 
 
 # ---------------------------------------------------------------------------
