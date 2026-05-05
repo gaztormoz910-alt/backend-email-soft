@@ -551,10 +551,103 @@ async def _main_logic() -> None:
 
 
             # --------------------------------------------------------------
-            # ФАЗА 2: Pipermail
+            # ФАЗА 2: Pastebin (Свежие дампы)
+            # --------------------------------------------------------------
+            if _source_enabled("pastebin") and PASTEBIN_SCRAPE_URL and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n📝 ЭТАП 2: Pastebin Scraping API")
+                pastebin_scanner = PastebinScanner(api_url=PASTEBIN_SCRAPE_URL)
+                pb_contacts = await pastebin_scanner.scan(http)
+                added_pb = 0
+                for contact in pb_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_pb += 1
+
+            # --------------------------------------------------------------
+            # ФАЗА 3: DeHashed (Агрегатор)
+            # --------------------------------------------------------------
+            if _source_enabled("dehashed") and DEHASHED_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n🗄 ЭТАП 3: DeHashed API")
+                dehashed_scanner = DehashedScanner(api_key=DEHASHED_API_KEY, username=DEHASHED_USERNAME)
+                dh_contacts = await dehashed_scanner.scan(http)
+                added_dh = 0
+                for contact in dh_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_dh += 1
+
+            # --------------------------------------------------------------
+            # ФАЗА 4: Snusbase (Агрегатор)
+            # --------------------------------------------------------------
+            if _source_enabled("snusbase") and SNUSBASE_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n🗄 ЭТАП 4: Snusbase API")
+                snusbase_scanner = SnusbaseScanner(api_key=SNUSBASE_API_KEY)
+                sb_contacts = await snusbase_scanner.scan(http)
+                added_sb = 0
+                for contact in sb_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_sb += 1
+
+            # --------------------------------------------------------------
+            # ФАЗА 5: GitHub (Открытые коммиты)
+            # --------------------------------------------------------------
+            if _source_enabled("github") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n🐙 ЭТАП 5: GitHub")
+                phase_start = datetime.now()
+
+                github = GitHubScanner(token=GITHUB_TOKEN)
+                gh_contacts = await github.scan(http)
+                added_gh = 0
+
+                for contact in gh_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED:
+                        break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_gh += 1
+
+                if added_gh > 0:
+                    msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
+                    log.info(msg_gh)
+                    asyncio.create_task(ws_manager.send_log(msg_gh))
+
+            # --------------------------------------------------------------
+            # ФАЗА 6: Shodan (Открытые БД)
+            # --------------------------------------------------------------
+            if _source_enabled("shodan") and SHODAN_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n📡 ЭТАП 6: Shodan")
+                shodan_scanner = ShodanScanner(api_key=SHODAN_API_KEY, queries=SHODAN_QUERIES)
+                sh_contacts = await shodan_scanner.scan(http)
+                added_sh = 0
+                for contact in sh_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_sh += 1
+
+            # --------------------------------------------------------------
+            # ФАЗА 7: GrayHatWarfare (S3 Buckets)
+            # --------------------------------------------------------------
+            if _source_enabled("grayhat") and GRAYHAT_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
+                log.info("\n☁ ЭТАП 7: GrayHatWarfare (S3 Buckets)")
+                grayhat_scanner = GrayhatScanner(api_key=GRAYHAT_API_KEY)
+                ghw_contacts = await grayhat_scanner.scan(http)
+                added_ghw = 0
+                for contact in ghw_contacts:
+                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
+                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
+                        await db_contact_queue.put(contact)
+                        added_ghw += 1
+
+            # --------------------------------------------------------------
+            # ФАЗА 8: Pipermail (Почтовые рассылки)
             # --------------------------------------------------------------
             if _source_enabled("pipermail") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                log.info("\n📧 ЭТАП 2: Архивы Pipermail")
+                log.info("\n📧 ЭТАП 8: Архивы Pipermail")
                 phase_start = datetime.now()
                 crawler = PipermailCrawler(servers=PIPERMAIL_SERVERS)
                 pbar = async_tqdm(desc="Обработка страниц", unit="стр", position=0, total=None)
@@ -576,12 +669,12 @@ async def _main_logic() -> None:
                 asyncio.create_task(ws_manager.send_log(msg_piper))
 
             # --------------------------------------------------------------
-            # ФАЗА 2.5: HyperKitty (Fedora)
+            # ФАЗА 9: HyperKitty (Почтовые рассылки)
             # --------------------------------------------------------------
             if _source_enabled("hyperkitty") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and HYPERKITTY_SERVERS:
-                log.info("\n📧 ЭТАП 2.5: HyperKitty (Fedora)")
+                log.info("\n📧 ЭТАП 9: HyperKitty (Fedora)")
                 phase_start = datetime.now()
-                asyncio.create_task(ws_manager.send_log("📧 ЭТАП 2.5: HyperKitty (Fedora) — обход архивов..."))
+                asyncio.create_task(ws_manager.send_log("📧 ЭТАП 9: HyperKitty (Fedora) — обход архивов..."))
 
                 hk_crawler = HyperKittyCrawler(servers=HYPERKITTY_SERVERS)
                 pbar_hk = async_tqdm(desc="HyperKitty страницы", unit="стр", position=0, total=None)
@@ -603,93 +696,12 @@ async def _main_logic() -> None:
                 asyncio.create_task(ws_manager.send_log(msg_hk))
 
             # --------------------------------------------------------------
-            # ФАЗА 3: GitHub
-            # --------------------------------------------------------------
-            if _source_enabled("github") and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                log.info("\n🐙 ЭТАП 3: GitHub")
-                phase_start = datetime.now()
-
-                github = GitHubScanner(token=GITHUB_TOKEN)
-                gh_contacts = await github.scan(http)
-                added_gh = 0
-
-                for contact in gh_contacts:
-                    if _STOP_REQUESTED or _CANCEL_REQUESTED:
-                        break
-                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
-                        await db_contact_queue.put(contact)
-                        added_gh += 1
-
-                if added_gh > 0:
-                    msg_gh = f"   🎯 Процессинг GitHub: +{added_gh} адресов"
-                    log.info(msg_gh)
-                    asyncio.create_task(ws_manager.send_log(msg_gh))
-
-            # --------------------------------------------------------------
-            # ФАЗА 3.1: OSINT API (Shodan, GrayHat, Pastebin, DeHashed, Snusbase)
-            # --------------------------------------------------------------
-            if _source_enabled("shodan") and SHODAN_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                log.info("\n📡 ЭТАП 3.1: Shodan")
-                shodan_scanner = ShodanScanner(api_key=SHODAN_API_KEY, queries=SHODAN_QUERIES)
-                sh_contacts = await shodan_scanner.scan(http)
-                added_sh = 0
-                for contact in sh_contacts:
-                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
-                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
-                        await db_contact_queue.put(contact)
-                        added_sh += 1
-
-            if _source_enabled("grayhat") and GRAYHAT_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                log.info("\n☁ ЭТАП 3.2: GrayHatWarfare (S3 Buckets)")
-                grayhat_scanner = GrayhatScanner(api_key=GRAYHAT_API_KEY)
-                ghw_contacts = await grayhat_scanner.scan(http)
-                added_ghw = 0
-                for contact in ghw_contacts:
-                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
-                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
-                        await db_contact_queue.put(contact)
-                        added_ghw += 1
-
-            if _source_enabled("pastebin") and PASTEBIN_SCRAPE_URL and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                log.info("\n📝 ЭТАП 3.3: Pastebin Scraping API")
-                pastebin_scanner = PastebinScanner(api_url=PASTEBIN_SCRAPE_URL)
-                pb_contacts = await pastebin_scanner.scan(http)
-                added_pb = 0
-                for contact in pb_contacts:
-                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
-                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
-                        await db_contact_queue.put(contact)
-                        added_pb += 1
-
-            if _source_enabled("dehashed") and DEHASHED_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                log.info("\n🗄 ЭТАП 3.4: DeHashed API")
-                dehashed_scanner = DehashedScanner(api_key=DEHASHED_API_KEY, username=DEHASHED_USERNAME)
-                dh_contacts = await dehashed_scanner.scan(http)
-                added_dh = 0
-                for contact in dh_contacts:
-                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
-                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
-                        await db_contact_queue.put(contact)
-                        added_dh += 1
-
-            if _source_enabled("snusbase") and SNUSBASE_API_KEY and not (_STOP_REQUESTED or _CANCEL_REQUESTED):
-                log.info("\n🗄 ЭТАП 3.5: Snusbase API")
-                snusbase_scanner = SnusbaseScanner(api_key=SNUSBASE_API_KEY)
-                sb_contacts = await snusbase_scanner.scan(http)
-                added_sb = 0
-                for contact in sb_contacts:
-                    if _STOP_REQUESTED or _CANCEL_REQUESTED: break
-                    if contact.domain in TRUSTED_DOMAINS or await mx.check(contact.domain):
-                        await db_contact_queue.put(contact)
-                        added_sb += 1
-
-            # --------------------------------------------------------------
-            # ФАЗА 4: Google Dorks
+            # ФАЗА 10: Google Dorks
             # --------------------------------------------------------------
             if _source_enabled("dorks") and not (_STOP_REQUESTED or _CANCEL_REQUESTED) and EMAIL_DORKS:
-                log.info("\n🔍 ЭТАП 4: Поисковые Dorks (%d запросов)", len(EMAIL_DORKS))
+                log.info("\n🔍 ЭТАП 10: Поисковые Dorks (%d запросов)", len(EMAIL_DORKS))
                 phase_start = datetime.now()
-                asyncio.create_task(ws_manager.send_log(f"🔍 ЭТАП 4: Google & DuckDuckGo Dorks — {len(EMAIL_DORKS)} поисковых запросов..."))
+                asyncio.create_task(ws_manager.send_log(f"🔍 ЭТАП 10: Google & DuckDuckGo Dorks — {len(EMAIL_DORKS)} поисковых запросов..."))
 
                 pbar_dork = async_tqdm(desc="Обработка Dork-URL", unit="стр", position=0, total=None)
                 _spawn_workers(pbar_dork)
