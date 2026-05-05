@@ -224,4 +224,10 @@ ROLE_PREFIXES: frozenset[str] = frozenset({
     "cron", "system", "notification", "notifications",
     "alert", "alerts", "monitor", "monitoring",
     "test", "testing", "debug", "dev", "staging",
+    # Генерические / не-личные (из COMB-мусора)
+    "user", "dummy", "master", "manager", "app", "web", "www",
+    "pro", "git", "bugzilla", "server", "client", "guest",
+    "demo", "example", "default", "anonymous", "unknown",
+    "nobody", "operator", "owner", "sender", "receiver",
+    "list", "lists", "announce", "news",
 })

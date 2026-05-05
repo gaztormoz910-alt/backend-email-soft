@@ -164,43 +164,80 @@ def is_fake_email(email: str) -> bool:
     
     local, _, domain = e.partition("@")
     
-    # Слишком короткий или мусорный локал (например, `_`, `___---`, `a14`)
-    if len(local) < 3 and not local.isalpha():
+    # ── Базовая валидация локальной части ──
+    if len(local) < 2:
         return True
-    if not any(c.isalpha() for c in local): # Нет букв (только цифры и символы `_---`)
+    if not any(c.isalpha() for c in local):
         return True
-        
+    # Одна буква + цифры (a14, a16, a18...) — мусор из COMB
+    if len(local) <= 3 and sum(c.isdigit() for c in local) >= 1 and sum(c.isalpha() for c in local) <= 1:
+        return True
+    # Локал заканчивается на точку или дефис — невалидный
+    if local.endswith(('.', '-', '..')) or local.startswith(('.', '-')):
+        return True
+
+    # ── Валидация домена ──
     if len(domain) < 3:
         return True
     if domain in _FAKE_DOMAINS or domain.startswith(("lists.", "list.", "groups.")):
         return True
         
-    # Блокировка доменов с криптографией / системным кодом
-    if domain in ("openssh.com", "libssh.org", "fedoraproject.org", "centos.org", "redhat.com", "pagure.io", "github.com", "gitlab.com"):
+    # Блокировка технических доменов
+    _BLOCKED_DOMAINS = {
+        "openssh.com", "libssh.org", "fedoraproject.org", "centos.org",
+        "redhat.com", "pagure.io", "github.com", "gitlab.com",
+        "debian.org", "python.org", "gnome.org", "kernel.org",
+        "launchpad.net", "fedorahosted.org",
+    }
+    if domain in _BLOCKED_DOMAINS:
+        return True
+    # Технические .org домены (Fedora, мейлинг-листы и т.д.)
+    if domain.endswith(".org") and any(kw in domain for kw in ("project", "fedora", "centos", "kernel", "lists", "launchpad")):
         return True
 
-    # Ролевые/технические адреса (info@, admin@, support@ и т.д.)
+    # ── Самоссылка: local == domain (gmail.com@gmail.com, yahoo.com@yahoo.com) ──
+    if local == domain or f"{local}" in _BLOCKED_DOMAINS or local in {
+        "gmail.com", "yahoo.com", "hotmail.com", "mail.ru", "yandex.ru",
+        "outlook.com", "aol.com", "icloud.com", "protonmail.com",
+    }:
+        return True
+
+    # ── Ролевые/технические адреса (info@, admin@, user@, master@ и т.д.) ──
     if local in ROLE_PREFIXES:
         return True
+    # Также блокируем с дефисом на конце: "office-", "olga-", "dmitry-", "igor--"
+    local_stripped = local.rstrip("-").rstrip(".")
+    if local_stripped in ROLE_PREFIXES:
+        return True
 
-    # Блокировка криптографических алгоритмов и патчей (SSH, SSL)
+    # ── Блокировка криптографических алгоритмов (SSH, SSL) ──
     crypto_prefixes = ("aes", "chacha", "ecdsa", "sk-ssh", "sk-ecdsa", "hmac", "umac", "rsa-sha", "sntrup", "ssh-ed")
     if local.startswith(crypto_prefixes):
         return True
         
-    # Блокировка технических ID коммитов / UUID / патчей Linux (очень длинные локальные части с кучей цифр)
-    if len(local) > 25 and (local.count("-") >= 3 or local.count(".") >= 2) and sum(c.isdigit() for c in local) > 8:
+    # ── Блокировка патчей / UUID (локал начинается с 8+ цифр подряд) ──
+    import re
+    if re.match(r'^\d{8,}', local):
+        return True
+    # Длинные технические ID с кучей цифр и разделителей
+    if len(local) > 20 and sum(c.isdigit() for c in local) > 6:
         return True
         
-    # Блокировка зацикленных / сгенерированных строк (например: anna-anna-anna, alex-alex-alex)
-    import re
-    # Если слово повторяется 3 и более раз (например alex-alex-alex)
-    parts = re.split(r'[-._]', local)
+    # ── Блокировка двойных и тройных повторов (dev-dev, anna-anna-anna, master...master) ──
+    parts = re.split(r'[-._]+', local)
     parts = [p for p in parts if p]
-    if len(parts) >= 3 and len(set(parts)) == 1:
+    if len(parts) >= 2 and len(set(parts)) == 1:
         return True
+    # Специальный случай: e-mail-mail-mail-mail (первое слово отличается, но остальные повторяются)
+    if len(parts) >= 3:
+        counter = {}
+        for p in parts:
+            counter[p] = counter.get(p, 0) + 1
+        most_common_count = max(counter.values())
+        if most_common_count >= 3:
+            return True
 
-    # Один regex вместо цикла из 11 — быстрее в ~5-10 раз
+    # ── Финальный regex-фильтр (noreply, sample, random_123 и т.д.) ──
     if _FAKE_LOCAL_RE.match(e):
         return True
         
