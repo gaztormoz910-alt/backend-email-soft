@@ -1,0 +1,227 @@
+"""
+services/disposable_domains.py
+Блоклист доменов одноразовых (disposable) и временных почтовых сервисов.
+
+Письма, отправленные на эти домены, ГАРАНТИРОВАННО портят репутацию:
+- Ящики живут 10 минут → bounce rate 100%
+- Многие являются спам-ловушками антиспам-организаций
+- Ни один реальный человек не использует их как основную почту
+
+Обновлять этот список по мере обнаружения новых сервисов.
+"""
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Одноразовые / временные почтовые домены (disposable email services)
+# ---------------------------------------------------------------------------
+DISPOSABLE_DOMAINS: frozenset[str] = frozenset({
+    # === Самые популярные (топ-50 по трафику) ===
+    "tempmail.com", "temp-mail.org", "temp-mail.io",
+    "guerrillamail.com", "guerrillamail.net", "guerrillamail.org",
+    "guerrillamail.de", "guerrillamail.biz", "guerrillamailblock.com",
+    "grr.la", "sharklasers.com", "guerrillamail.info",
+    "yopmail.com", "yopmail.fr", "yopmail.net",
+    "10minutemail.com", "10minutemail.net", "10minutemail.org",
+    "minutemail.com", "tempail.com", "tempr.email",
+    "throwaway.email", "throwawaymail.com",
+    "dispostable.com", "disposableemailaddresses.emailmiser.com",
+    "maildrop.cc", "mailnesia.com", "mailsac.com",
+    "trashmail.com", "trashmail.me", "trashmail.net", "trashmail.org",
+    "trashemail.de", "trashmail.at",
+    "mailinator.com", "mailinator.net", "mailinator2.com",
+    "sogetthis.com", "mailinater.com", "mailinator.org",
+    "spam4.me", "spamgourmet.com", "spamgourmet.net",
+    "getairmail.com", "filzmail.com",
+    "fakeinbox.com", "fakemail.fr", "fakemail.net",
+    "getnada.com", "nada.email", "nada.ltd",
+    "mohmal.com", "mohmal.im", "mohmal.in", "mohmal.tech",
+
+    # === Крупные сервисы одноразовок ===
+    "tempinbox.com", "tempinbox.xyz",
+    "harakirimail.com", "discard.email",
+    "emkei.cz", "emailondeck.com",
+    "crazymailing.com", "crazy.mine.nu",
+    "armyspy.com", "cuvox.de", "dayrep.com",
+    "einrot.com", "fleckens.hu", "gustr.com",
+    "jourrapide.com", "rhyta.com", "superrito.com",
+    "teleworm.us",
+    "anonymbox.com", "ano-mail.net",
+    "bugmenot.com", "bumpymail.com",
+    "byom.de", "chacuo.net",
+    "cool.fr.nf", "correo.blogos.net",
+    "cosmorph.com", "courriel.fr.nf",
+    "dandikmail.com", "deadaddress.com",
+    "despam.it", "despammed.com",
+    "devnullmail.com", "dfgh.net",
+    "digitalsanctuary.com", "discardmail.com",
+    "discardmail.de", "disposableaddress.com",
+    "disposeamail.com", "disposemail.com",
+    "dm.w3internet.co.uk", "dodgeit.com",
+    "dodgit.com", "dodgit.org",
+    "dontsendmespam.de", "drdrb.com",
+    "dump-email.info", "dumpanything.com",
+    "dumpyemail.com", "e4ward.com",
+    "easytrashmail.com", "emaildienst.de",
+    "emailgo.de", "emailias.com",
+    "emailigo.de", "emailinfive.com",
+    "emaillime.com", "emailmiser.com",
+    "emailproxsy.com", "emails.ga",
+    "emailsensei.com", "emailtemporario.com.br",
+    "emailto.de", "emailwarden.com",
+    "emailx.at.hm", "emailxfer.com",
+    "emz.net", "enterto.com",
+    "ephemail.net", "etranquil.com",
+    "etranquil.net", "etranquil.org",
+    "evopo.com", "explodemail.com",
+    "express.net.ua", "eyepaste.com",
+    "fastacura.com", "fastchevy.com",
+    "fastchrysler.com", "fastkawasaki.com",
+    "fastmazda.com", "fastmitsubishi.com",
+    "fastnissan.com", "fastsubaru.com",
+    "fastsuzuki.com", "fasttoyota.com",
+
+    # === Известные сервисы временных почт ===
+    "mailcatch.com", "mailchop.com",
+    "maildu.de", "maileater.com",
+    "mailexpire.com", "mailforspam.com",
+    "mailfree.ga", "mailfs.com",
+    "mailguard.me", "mailhazard.com",
+    "mailhazard.us", "mailhz.me",
+    "mailimate.com", "mailin8r.com",
+    "mailinater.com", "mailincubator.com",
+    "mailismagic.com", "mailjunk.cf",
+    "mailjunk.ga", "mailjunk.gq",
+    "mailjunk.ml", "mailjunk.tk",
+    "mailme.ir", "mailme.lv",
+    "mailmetrash.com", "mailmoat.com",
+    "mailms.com", "mailnator.com",
+    "mailnull.com", "mailorg.org",
+    "mailpick.biz", "mailproxsy.com",
+    "mailquack.com", "mailrock.biz",
+    "mailscrap.com", "mailshell.com",
+    "mailsiphon.com", "mailslapping.com",
+    "mailslite.com", "mailtemp.info",
+    "mailtothis.com", "mailtrash.net",
+    "mailzilla.com", "mailzilla.org",
+    "mailzilla.orgmbx.cc",
+    "mega.zik.dj", "meinspamschutz.de",
+    "meltmail.com", "messagebeamer.de",
+    "mezimages.net", "ministry-of-silly-walks.de",
+    "mintemail.com", "misterpinball.de",
+    "mmmmail.com", "mobi.web.id",
+    "mobileninja.co.uk", "moncourrier.fr.nf",
+    "monemail.fr.nf", "monmail.fr.nf",
+
+    # === Российские/СНГ одноразовки ===
+    "dropmail.me", "cmail.net", "cmail.com",
+    "tmpmail.net", "tmpmail.org",
+    "mailtemp.net", "mail-temp.com",
+
+    # === Подозрительные TLD (часто используются для одноразовок) ===
+    "mailinator.us", "safetymail.info",
+    "spambox.us", "spambox.info",
+    "spamcero.com", "spamcorner.net",
+    "spamcowboy.com", "spamcowboy.net",
+    "spamcowboy.org", "spamday.com",
+    "spamex.com", "spamfighter.cf",
+    "spamfighter.ga", "spamfighter.gq",
+    "spamfighter.ml", "spamfighter.tk",
+    "spamfree24.com", "spamfree24.de",
+    "spamfree24.eu", "spamfree24.info",
+    "spamfree24.net", "spamfree24.org",
+    "spamhereplease.com", "spamherelots.com",
+    "spamhole.com", "spaml.com",
+    "spaml.de", "spammotel.com",
+    "spamobox.com", "spamoff.de",
+    "spamslicer.com", "spamspot.com",
+    "spamstack.net", "spamthis.co.uk",
+    "spamtrap.ro", "spamtrail.com",
+    "tempemail.co.za", "tempemail.net",
+    "tempemails.io",
+    "tempomail.fr", "temporarily.de",
+    "temporarioemail.com.br", "temporaryemail.net",
+    "temporaryemail.us", "temporaryforwarding.com",
+    "temporaryinbox.com", "temporarymailaddress.com",
+    "tempthe.net", "thankdog.com",
+    "thc.st", "thetempmail.com",
+    "thisisnotmyrealemail.com",
+    "throam.com", "throwawayemailaddress.com",
+    "tittbit.in", "tizi.com",
+    "tmailinator.com", "toiea.com",
+    "toomail.biz", "topranklist.de",
+    "trashmails.com", "trasz.com",
+    "trbvm.com", "trbvn.com",
+    "trialmail.de", "trickmail.net",
+    "trillianpro.com", "turual.com",
+    "twinmail.de", "tyldd.com",
+    "uggsrock.com", "umail.net",
+    "upliftnow.com", "uplipht.com",
+    "venompen.com", "veryreallyfakedomainnoreally.com",
+    "viditag.com", "viewcastmedia.com",
+    "viewcastmedia.net", "viewcastmedia.org",
+    "vomoto.com", "vpn.st",
+    "vsimcard.com", "vubby.com",
+    "wasteland.rfc822.org",
+    "webemail.me", "weg-werf-email.de",
+    "wegwerfadresse.de", "wegwerfemail.com",
+    "wegwerfemail.de", "wegwerfmail.de",
+    "wegwerfmail.info", "wegwerfmail.net",
+    "wegwerfmail.org", "wh4f.org",
+    "whatiaas.com", "whatpaas.com",
+    "whyspam.me", "wikidocuslice.com",
+    "willhackforfood.biz", "willselfdestruct.com",
+    "winemaven.info", "wronghead.com",
+    "wuzup.net", "wuzupmail.net",
+    "wwwnew.eu", "xagloo.com",
+    "xemaps.com", "xents.com",
+    "xjoi.com", "xmaily.com",
+    "xoxy.net", "yapped.net",
+    "yep.it", "yogamaven.com",
+    "yomail.info", "yopmail.gq",
+    "yuurok.com", "zehnminuten.de",
+    "zehnminutenmail.de", "zetmail.com",
+    "zippymail.info", "zoaxe.com",
+    "zoemail.org", "zomg.info",
+})
+
+# ---------------------------------------------------------------------------
+# Ролевые / технические префиксы email — не личные, а корпоративные ящики
+# Рассылка на них = мгновенное попадание в спам + жалоба
+# ---------------------------------------------------------------------------
+ROLE_PREFIXES: frozenset[str] = frozenset({
+    # Административные
+    "admin", "administrator", "root", "sysadmin", "postmaster",
+    "hostmaster", "webmaster", "domainadmin",
+    # Поддержка и сервис
+    "support", "help", "helpdesk", "service", "customerservice",
+    "techsupport", "tech", "feedback",
+    # Безопасность и злоупотребления
+    "abuse", "security", "spam", "phishing", "cert",
+    "noc", "soc",
+    # Общие корпоративные
+    "info", "information", "contact", "contacts",
+    "hello", "enquiry", "inquiry", "office", "reception",
+    # Продажи и маркетинг
+    "sales", "marketing", "advertising", "ads", "promo",
+    "newsletter", "subscribe", "unsubscribe",
+    "partnerships", "partner", "affiliate",
+    # Юридические и HR
+    "legal", "compliance", "hr", "hiring", "jobs", "careers",
+    "recruit", "recruitment",
+    # Финансы
+    "billing", "accounting", "finance", "invoices", "payments",
+    # Пресса и PR
+    "press", "media", "pr", "communications", "comms",
+    # Общие нежелательные
+    "noreply", "no-reply", "no.reply", "donotreply", "do-not-reply",
+    "mailer-daemon", "mailer", "daemon",
+    "bounce", "bounces", "return", "returns",
+    "devnull", "null", "void", "blackhole",
+    "postoffice", "mail", "email", "e-mail",
+    "team", "staff", "group", "all", "everyone", "everybody",
+    # Боты и автоматика
+    "bot", "robot", "auto", "autoresponder", "autoreply",
+    "cron", "system", "notification", "notifications",
+    "alert", "alerts", "monitor", "monitoring",
+    "test", "testing", "debug", "dev", "staging",
+})

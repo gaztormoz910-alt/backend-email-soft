@@ -88,6 +88,10 @@ class LocalFileScanner(ILocalFileScanner):
             return self._from_excel(filepath)
         elif ext == ".csv":
             return self._from_csv(filepath)
+        elif ext == ".pdf":
+            return self._from_pdf(filepath)
+        elif ext in (".docx", ".doc"):
+            return self._from_docx(filepath)
         elif ext in (".zip", ".tar", ".gz", ".bz2", ".rar", ".7z"):
             return self._from_archive(filepath)
         else:
@@ -151,6 +155,59 @@ class LocalFileScanner(ILocalFileScanner):
         except Exception as exc:
             log.debug("✗ Ошибка CSV %s: %s", filepath.name, exc)
             
+        return list(seen.values())
+
+    @staticmethod
+    def _from_pdf(filepath: Path) -> list[Contact]:
+        """Извлечь email из PDF через pdfplumber (опциональная зависимость)."""
+        try:
+            import pdfplumber  # type: ignore[import]
+        except ImportError:
+            log.debug("pdfplumber не установлен — PDF %s пропущен", filepath.name)
+            return []
+
+        seen: dict[str, Contact] = {}
+        try:
+            with pdfplumber.open(filepath) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if not text:
+                        continue
+                    for email in EMAIL_RE.findall(text):
+                        e = email.lower().strip()
+                        if not is_fake_email(e) and e not in seen:
+                            seen[e] = Contact.from_email_only(e)
+        except Exception as exc:
+            log.debug("✗ Ошибка PDF %s: %s", filepath.name, exc)
+        return list(seen.values())
+
+    @staticmethod
+    def _from_docx(filepath: Path) -> list[Contact]:
+        """Извлечь email из DOCX через python-docx (опциональная зависимость)."""
+        try:
+            import docx  # type: ignore[import]
+        except ImportError:
+            log.debug("python-docx не установлен — DOCX %s пропущен", filepath.name)
+            return []
+
+        seen: dict[str, Contact] = {}
+        try:
+            doc = docx.Document(filepath)
+            for paragraph in doc.paragraphs:
+                for email in EMAIL_RE.findall(paragraph.text):
+                    e = email.lower().strip()
+                    if not is_fake_email(e) and e not in seen:
+                        seen[e] = Contact.from_email_only(e)
+            # Также проверяем таблицы внутри документа
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for email in EMAIL_RE.findall(cell.text):
+                            e = email.lower().strip()
+                            if not is_fake_email(e) and e not in seen:
+                                seen[e] = Contact.from_email_only(e)
+        except Exception as exc:
+            log.debug("✗ Ошибка DOCX %s: %s", filepath.name, exc)
         return list(seen.values())
 
     def _from_archive(self, filepath: Path) -> list[Contact]:

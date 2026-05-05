@@ -14,6 +14,7 @@ import re
 
 from ..core.entities import Contact
 from ..core.interfaces import IEmailExtractorService
+from .disposable_domains import DISPOSABLE_DOMAINS, ROLE_PREFIXES
 
 # ---------------------------------------------------------------------------
 # Константы фильтрации
@@ -49,7 +50,7 @@ _IGNORED_EMAILS: frozenset[str] = frozenset({
 _FAKE_DOMAINS: frozenset[str] = frozenset({
     "example.com", "test.com", "domain.com", "localhost.com",
     "email.com", "placeholder.com", "mailinator.com",
-})
+}) | DISPOSABLE_DOMAINS  # + 300+ одноразовых доменов из blocklist
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ _FAKE_DOMAINS: frozenset[str] = frozenset({
 # ---------------------------------------------------------------------------
 
 def is_fake_email(email: str) -> bool:
-    """Вернуть True, если email выглядит как заглушка / тестовый адрес."""
+    """Вернуть True, если email выглядит как заглушка / тестовый / ролевой адрес."""
     e = email.lower().strip()
     if e in _IGNORED_EMAILS or len(e) < 6 or "@" not in e:
         return True
@@ -65,6 +66,10 @@ def is_fake_email(email: str) -> bool:
     if len(domain) < 3:
         return True
     if domain in _FAKE_DOMAINS:
+        return True
+    # Ролевые/технические адреса (info@, admin@, support@ и т.д.)
+    # Рассылка на них = мгновенная жалоба + порча репутации
+    if local in ROLE_PREFIXES:
         return True
     for pat in _FAKE_PATTERNS:
         if pat.search(local + "@"):

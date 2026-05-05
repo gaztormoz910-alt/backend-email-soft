@@ -154,11 +154,35 @@ HYPERKITTY_SERVERS: list[dict] = [
 COMB_API_URL: str = os.environ.get("COMB_API_URL", "https://api.proxynova.com/comb")
 COMB_SLEEP: float = float(os.environ.get("COMB_SLEEP", "3.0"))
 _ALL_COMB_DOMAINS: list[str] = [
-    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
-    "mail.ru", "yandex.ru", "protonmail.com", "aol.com",
-    "icloud.com", "zoho.com", "gmx.com", "fastmail.com",
-    "tutanota.com", "mail.com", "inbox.ru", "list.ru",
-    "bk.ru", "rambler.ru", "live.com", "msn.com",
+    # === Глобальные гиганты (95% мирового трафика) ===
+    "gmail.com", "googlemail.com",
+    "yahoo.com", "ymail.com", "rocketmail.com",
+    "outlook.com", "hotmail.com", "live.com", "msn.com",
+    "aol.com",
+    "icloud.com", "me.com", "mac.com",
+    "protonmail.com", "proton.me", "pm.me",
+    # === Европа (крупные провайдеры с живыми пользователями) ===
+    "gmx.com", "gmx.de", "gmx.net", "gmx.at",
+    "web.de",
+    "t-online.de",
+    "orange.fr", "laposte.net", "free.fr", "sfr.fr",
+    "libero.it", "virgilio.it",
+    "wp.pl", "onet.pl", "interia.pl", "o2.pl",
+    "seznam.cz",
+    "abv.bg",
+    # === СНГ / Россия ===
+    "mail.ru", "bk.ru", "inbox.ru", "list.ru",
+    "yandex.ru", "yandex.com", "ya.ru",
+    "rambler.ru",
+    "ukr.net", "i.ua", "meta.ua",
+    # === США / Канада (ISP-провайдеры) ===
+    "comcast.net", "verizon.net", "att.net",
+    "sbcglobal.net", "cox.net", "charter.net",
+    # === Прочие крупные ===
+    "zoho.com",
+    "fastmail.com",
+    "tutanota.com", "tuta.io",
+    "mail.com",
 ]
 COMB_DOMAINS: list[str] = _my_slice(_ALL_COMB_DOMAINS, BACKEND_INDEX, BACKEND_TOTAL)
 
@@ -166,13 +190,29 @@ COMB_DOMAINS: list[str] = _my_slice(_ALL_COMB_DOMAINS, BACKEND_INDEX, BACKEND_TO
 # Дорки
 # ---------------------------------------------------------------------------
 _ALL_EMAIL_DORKS: list[str] = [
+    # === Файлы с email-адресами на открытых серверах ===
     'intitle:"index of" "subscribers.csv"',
     'intitle:"index of" "emails.csv"',
+    'intitle:"index of" "contacts.csv"',
+    'intitle:"index of" "members.csv"',
+    'intitle:"index of" "users.csv"',
+    'intitle:"index of" "mailing" filetype:csv',
+    'intitle:"index of" "newsletter" filetype:txt',
+    # === CSV / TXT с email-адресами ===
     'filetype:csv intext:"@" -intext:"example.com"',
     'filetype:txt intext:"@" -intext:"example.com"',
+    'filetype:csv "email" "first" "last" -intext:"example"',
+    'filetype:xlsx intext:"@gmail.com" intext:"@yahoo.com"',
+    # === Логи и утечки ===
     'inurl:"wp-content/uploads/mc4wp-debug.log"',
     'intext:"@gmail.com" filetype:csv OR filetype:txt',
-    # Paste-сайты (динамические источники)
+    'intext:"@yahoo.com" filetype:csv OR filetype:txt',
+    'intext:"@outlook.com" filetype:csv OR filetype:txt',
+    'intext:"@hotmail.com" filetype:csv OR filetype:txt',
+    # === Google Docs / Sheets (публичные) ===
+    'site:docs.google.com "email" "@gmail.com"',
+    'site:docs.google.com "subscribers" "email" "@"',
+    # === Paste-сайты (динамические источники) ===
     'site:pastebin.com intext:"@gmail.com"',
     'site:pastebin.com intext:"@yahoo.com" intext:"@"',
     'site:pastebin.com "email" "password" filetype:txt',
@@ -181,5 +221,13 @@ _ALL_EMAIL_DORKS: list[str] = [
     'site:ghostbin.co "email" "password"',
     'site:rentry.co intext:"@yahoo.com"',
     'site:rentry.co "combo" "@"',
+    # === Конференции, университеты, организации ===
+    'intext:"attendee" intext:"@" filetype:pdf',
+    'intext:"participant" "email" filetype:csv',
+    'intext:"directory" "email" "phone" filetype:csv',
+    'intext:"roster" "email" filetype:xlsx OR filetype:csv',
+    # === GitHub (открытые репозитории с данными) ===
+    'site:github.com "email" "csv" "@gmail.com"',
+    'site:github.com "contacts" "email" filetype:csv',
 ]
 EMAIL_DORKS: list[str] = _my_slice(_ALL_EMAIL_DORKS, BACKEND_INDEX, BACKEND_TOTAL)
