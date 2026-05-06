@@ -188,7 +188,7 @@ def is_fake_email(email: str) -> bool:
         return True
 
     # ── Самоссылка: local == domain (gmail.com@gmail.com, yahoo.com@yahoo.com) ──
-    if local == domain or f"{local}" in _BLOCKED_DOMAINS or local in {
+    if local == domain or local in {
         "gmail.com", "yahoo.com", "hotmail.com", "mail.ru", "yandex.ru",
         "outlook.com", "aol.com", "icloud.com", "protonmail.com",
     }:
