@@ -11,6 +11,9 @@ fake-useragent>=1.5.1
 dnspython>=2.6.1
 googlesearch-python>=1.2.3
 
+# Валидация email (RFC + DNS)
+email-validator>=2.1.0
+
 # Конфигурация и утилиты
 python-dotenv>=1.0.1
 tqdm>=4.66.4

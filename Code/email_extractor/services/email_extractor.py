@@ -237,9 +237,33 @@ def is_fake_email(email: str) -> bool:
         if most_common_count >= 3:
             return True
 
+    # ── Блокировка мусорных доменов (Entropy / Garbage Domain check) ──
+    # Основано на исследованиях со StackOverflow: мусорные домены часто
+    # состоят из случайных согласных букв и цифр (например, xvf4q.com).
+    domain_name = domain.split('.')[0]
+    if len(domain_name) > 5:
+        consonants = sum(1 for c in domain_name if c.isalpha() and c not in "aeiouy")
+        vowels = sum(1 for c in domain_name if c in "aeiouy")
+        numbers = sum(c.isdigit() for c in domain_name)
+        # Если в домене слишком много согласных или цифр подряд — это мусор
+        if numbers > len(domain_name) / 2:
+            return True
+        if consonants > 4 and vowels == 0:
+            return True
+
     # ── Финальный regex-фильтр (noreply, sample, random_123 и т.д.) ──
     if _FAKE_LOCAL_RE.match(e):
         return True
+
+    # ── Слой 2: RFC-валидация через email-validator (JoshData) ──
+    # Проверяем синтаксис по стандарту RFC 5321/5322
+    try:
+        from email_validator import validate_email as _rfc_validate, EmailNotValidError
+        _rfc_validate(e, check_deliverability=False)
+    except EmailNotValidError:
+        return True  # Не прошёл RFC — мусор
+    except ImportError:
+        pass  # Библиотека не установлена — пропускаем
         
     return False
 
