@@ -181,23 +181,10 @@ def is_fake_email(email: str) -> bool:
     if local.endswith(('.', '-', '..')) or local.startswith(('.', '-')):
         return True
 
-    # ── Валидация домена ──
-    if len(domain) < 3:
-        return True
-    if domain in _FAKE_DOMAINS or domain.startswith(("lists.", "list.", "groups.")):
-        return True
-        
-    # Блокировка технических доменов
-    _BLOCKED_DOMAINS = {
-        "openssh.com", "libssh.org", "fedoraproject.org", "centos.org",
-        "redhat.com", "pagure.io", "github.com", "gitlab.com",
-        "debian.org", "python.org", "gnome.org", "kernel.org",
-        "launchpad.net", "fedorahosted.org",
-    }
-    if domain in _BLOCKED_DOMAINS:
-        return True
-    # Технические .org домены (Fedora, мейлинг-листы и т.д.)
-    if domain.endswith(".org") and any(kw in domain for kw in ("project", "fedora", "centos", "kernel", "lists", "launchpad")):
+    # ── Валидация домена (СТРОГИЙ БЕЛЫЙ СПИСОК) ──
+    # Пропускаем только проверенные B2C домены (Gmail, Outlook, Yahoo и национальные провайдеры).
+    # Это мгновенно отсекает 100% одноразовых почт, мусорных доменов и корпоративных спам-ловушек!
+    if domain not in TRUSTED_DOMAINS:
         return True
 
     # ── Самоссылка: local == domain (gmail.com@gmail.com, yahoo.com@yahoo.com) ──
@@ -208,9 +195,11 @@ def is_fake_email(email: str) -> bool:
         return True
 
     # ── Ролевые/технические адреса (info@, admin@, user@, master@ и т.д.) ──
+    # Проверяем не только точное совпадение, но и составные слова (admin-ugoria, sales-manager, test-test)
+    if re.search(r'\b(admin|support|manager|sales|system|test|user|office|info|master)\b', local):
+        return True
     if local in ROLE_PREFIXES:
         return True
-    # Также блокируем с дефисом на конце: "office-", "olga-", "dmitry-", "igor--"
     local_stripped = local.rstrip("-").rstrip(".")
     if local_stripped in ROLE_PREFIXES:
         return True
