@@ -16,6 +16,11 @@ from ..core.entities import Contact
 from ..core.interfaces import IEmailExtractorService
 from .disposable_domains import DISPOSABLE_DOMAINS, ROLE_PREFIXES
 
+try:
+    from email_validator import validate_email as _rfc_validate_func
+except ImportError:
+    _rfc_validate_func = None
+
 # ---------------------------------------------------------------------------
 # Константы фильтрации
 # ---------------------------------------------------------------------------
@@ -258,11 +263,13 @@ def is_fake_email(email: str) -> bool:
     # ── Слой 2: RFC-валидация через email-validator (JoshData) ──
     # Проверяем синтаксис по стандарту RFC 5321/5322
     try:
-        from email_validator import validate_email as _rfc_validate, EmailNotValidError
-        _rfc_validate(e, check_deliverability=False)
-    except EmailNotValidError:
-        return True  # Не прошёл RFC — мусор
-    except ImportError:
+        if _rfc_validate_func:
+            _rfc_validate_func(e, check_deliverability=False)
+    except Exception:
+        # Любая ошибка парсинга или валидации от библиотеки -> мусор.
+        # Ловим Exception (а не только EmailNotValidError), чтобы гарантированно
+        # защитить сервер от падений (крашей) при встрече с экзотическим мусором.
+        return True
         pass  # Библиотека не установлена — пропускаем
         
     return False
